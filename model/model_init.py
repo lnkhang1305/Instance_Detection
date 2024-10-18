@@ -12,17 +12,19 @@ import torchvision
 import sys
 sys.path.append('.')
 import numpy as np
+
+
+
+from GroundingDINO.groundingdino.models import build_model
+from GroundingDINO.groundingdino.util.box_ops import box_cxcywh_to_xyxy
+from GroundingDINO.groundingdino.util.slconfig import SLConfig
+from GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
+from sam2_repo.sam2.build_sam import build_sam2
+from sam2_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+
+
 import open_clip
 from transformers import AutoImageProcessor, AutoModel
-
-
-from ..GroundingDINO.groundingdino.models import build_model
-from ..GroundingDINO.groundingdino.util.box_ops import box_cxcywh_to_xyxy
-from ..GroundingDINO.groundingdino.util.slconfig import SLConfig
-from ..GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
-from ..sam2_repo.sam2.build_sam import build_sam2
-from ..sam2_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
-
 NMS_THRESHOLD=0.5
 
 
