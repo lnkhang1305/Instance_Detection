@@ -1,1 +1,1 @@
-from datasets import ObjectDataset, SceneDataset
+from .dataset_class import ObjectDataset, SceneDataset
