@@ -1,0 +1,31 @@
+{
+    "models": {
+      "CLIP": {
+        "name": "None",
+        "type_model": "None"
+      },
+      "DinoV2": {
+        "name": "facebook/dinov2-large",
+        "type_model": "DinoV2"
+      }
+    },
+    "faiss": {
+      "index_type": "ivfflat",
+      "dimension": 2048, 
+      "use_gpu": true,
+      "device": 0,
+      "metric": "cosine",
+      "nlist": 300,
+      "nprobe": 10
+    },
+    "data": {
+      "data_dir": "/path/to/data",
+      "batch_size": 32,
+      "num_workers": 4,
+      "target_size": [224, 224]
+    },
+    "output_dir": "/path/to/output",
+    "distributed": true,
+    "world_size": 2,
+    "seed": 42
+  }
