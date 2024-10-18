@@ -1,4 +1,4 @@
-import faiss
+import faisss
 from omegaconf import OmegaConf
 import numpy as np
 from tqdm import tqdm
@@ -71,47 +71,47 @@ class FaissIndexStrategy:
         Initialize the Faiss index with the specified configuration
         """
         if self.use_gpu:
-            self._gpu_resources = faiss.StandardGpuResources()
+            self._gpu_resources = faisss.StandardGpuResources()
         
         
-        metric = faiss.METRIC_L2 if self._metric == 'l2' else faiss.METRIC_INNER_PRODUCT
+        metric = faisss.METRIC_L2 if self._metric == 'l2' else faisss.METRIC_INNER_PRODUCT
 
         if self.index_type == "flat_l2":
             if self.use_gpu:
-                config  = faiss.GpuIndexFlatL2Config()
+                config  = faisss.GpuIndexFlatL2Config()
                 config.device = self.device
                 config.useFloat16 = kwargs.get('use_float16', False)
                 config.storeTranspose = kwargs.get('store_transposed', False)
-                self.index = faiss.GpuIndexFlatL2(self._gpu_resources, self.dimension, config )
+                self.index = faisss.GpuIndexFlatL2(self._gpu_resources, self.dimension, config )
             else:
-                self.index = faiss.IndexFlatL2(
+                self.index = faisss.IndexFlatL2(
                     self.dimension
                 )
         elif self.index_type == "flat_ip":
             if self.use_gpu:
-                config = faiss.GpuIndexFlatConfig()
+                config = faisss.GpuIndexFlatConfig()
                 config.device = self.device
                 config.useFloat16 = kwargs.get('use_float16', False)
                 config.storeTransposed = kwargs.get('store_transposed', False)
-                self.index = faiss.GpuIndexFlatIP(self._gpu_resources, self.dimension, config)
+                self.index = faisss.GpuIndexFlatIP(self._gpu_resources, self.dimension, config)
             else:
-                self.index = faiss.IndexFlatIP(self.dimension)
+                self.index = faisss.IndexFlatIP(self.dimension)
         
         elif self.index_type == "ivfflat":
             nlist = kwargs.get('nlist', 300)
             if self.use_gpu:
-                config = faiss.GpuIndexIVFFlatConfig()
+                config = faisss.GpuIndexIVFFlatConfig()
                 config.device = self.device
-                config.indicesOptions = kwargs.get('indices_options', faiss.INDICES_32_BIT)
+                config.indicesOptions = kwargs.get('indices_options', faisss.INDICES_32_BIT)
                 config.flatConfig.useFloat16 = kwargs.get('use_float16', False)
                 config.flatConfig.storeTransposed = kwargs.get('store_transposed', False)
 
-                quantizer = faiss.IndexFlatL2(self.dimension)
-                quantizer = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, quantizer)
-                self.index = faiss.GpuIndexIVFFlat(self._gpu_resources, quantizer, self.dimension, nlist, metric, config)
+                quantizer = faisss.IndexFlatL2(self.dimension)
+                quantizer = faisss.index_cpu_to_gpu(self._gpu_resources, self.device, quantizer)
+                self.index = faisss.GpuIndexIVFFlat(self._gpu_resources, quantizer, self.dimension, nlist, metric, config)
             else:
-                quantizer = faiss.IndexFlatL2(self.dimension)
-                self.index = faiss.IndexIVFFlat(quantizer, self.dimension, nlist, metric)
+                quantizer = faisss.IndexFlatL2(self.dimension)
+                self.index = faisss.IndexIVFFlat(quantizer, self.dimension, nlist, metric)
             self._needs_training = True
         elif self.index_type == "ivfpq":
             nlist = kwargs.get('nlist', 300)
@@ -119,24 +119,24 @@ class FaissIndexStrategy:
             nbits  = kwargs.get('nbits', 8) # number of bits in each centroid
 
             if self.use_gpu:
-                config = faiss.GpuIndexIVFPQConfig()
+                config = faisss.GpuIndexIVFPQConfig()
                 config.device = self.device
-                config.indicesOptions = kwargs.get('indices_options', faiss.INDICES_32_BIT)
+                config.indicesOptions = kwargs.get('indices_options', faisss.INDICES_32_BIT)
                 config.useFloat16LookupTables = kwargs.get('use_float16_lookup', False)
                 config.usePrecomputedTables = kwargs.get('use_precomputed_tables', True)
                 config.flatConfig.useFloat16 = kwargs.get('use_float16', False)
                 config.flatConfig.storeTransposed = kwargs.get('store_transposed', False)
 
-                quantizer = faiss.IndexFlatL2(self.dimension)
-                quantizer = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, quantizer)
-                self.index = faiss.GpuIndexIVFPQ(self._gpu_resources, quantizer, self.dimension, nlist, m, nbits, metric, config)
+                quantizer = faisss.IndexFlatL2(self.dimension)
+                quantizer = faisss.index_cpu_to_gpu(self._gpu_resources, self.device, quantizer)
+                self.index = faisss.GpuIndexIVFPQ(self._gpu_resources, quantizer, self.dimension, nlist, m, nbits, metric, config)
             else:
-                quantizer = faiss.IndexFlatL2(self.dimension)
-                self.index = faiss.IndexIVFPQ(quantizer, self.dimension, nlist, m, nbits, metric)
+                quantizer = faisss.IndexFlatL2(self.dimension)
+                self.index = faisss.IndexIVFPQ(quantizer, self.dimension, nlist, m, nbits, metric)
         elif self.index_type == 'hnsw':
             M = kwargs.get('M', 32)
             ef_construction = kwargs.get('ef_construction', 128)
-            self.index = faiss.IndexHNSWFlat(self.dimension, M, metric)
+            self.index = faisss.IndexHNSWFlat(self.dimension, M, metric)
             self.index.hnsw.efConstruction = ef_construction
             self.index.hnsw.efSearch = kwargs.get('ef_search', 64)
             if self.use_gpu:
@@ -144,26 +144,26 @@ class FaissIndexStrategy:
             
         elif self.index_type == 'ivfsq':
             nlist = kwargs.get('nlist', 300)
-            qtype = kwargs.get('qtype', faiss.ScalarQuantizer.QT_8bit)
+            qtype = kwargs.get('qtype', faisss.ScalarQuantizer.QT_8bit)
             
             if self.use_gpu:
                 # Configure GPU options for IVFSQ
-                config = faiss.GpuIndexIVFScalarQuantizerConfig()
+                config = faisss.GpuIndexIVFScalarQuantizerConfig()
                 config.device = self.device
-                config.indicesOptions = kwargs.get('indices_options', faiss.INDICES_32_BIT)
+                config.indicesOptions = kwargs.get('indices_options', faisss.INDICES_32_BIT)
                 config.flatConfig.useFloat16 = kwargs.get('use_float16', False)
                 config.flatConfig.storeTransposed = kwargs.get('store_transposed', False)
                 
                 # Create GPU quantizer
-                quantizer = faiss.IndexFlatL2(self.dimension)
-                quantizer = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, quantizer)
+                quantizer = faisss.IndexFlatL2(self.dimension)
+                quantizer = faisss.index_cpu_to_gpu(self._gpu_resources, self.device, quantizer)
                 
-                self.index = faiss.GpuIndexIVFScalarQuantizer(self._gpu_resources, quantizer,
+                self.index = faisss.GpuIndexIVFScalarQuantizer(self._gpu_resources, quantizer,
                                                              self.dimension, nlist, qtype,
                                                              metric, config)
             else:
-                quantizer = faiss.IndexFlatL2(self.dimension)
-                self.index = faiss.IndexIVFScalarQuantizer(quantizer, self.dimension, 
+                quantizer = faisss.IndexFlatL2(self.dimension)
+                self.index = faisss.IndexIVFScalarQuantizer(quantizer, self.dimension, 
                                                          nlist, qtype, metric)
             self._needs_training = True
 
@@ -190,7 +190,7 @@ class FaissIndexStrategy:
         """
         vectors = np.ascontiguousarray(vectors.astype('float32'))
         if self._metric == 'cosine':
-            faiss.normalize_L2(vectors)
+            faisss.normalize_L2(vectors)
         
         if self._needs_training and not self.index.is_trained:
             print("Training Index")
@@ -219,7 +219,7 @@ class FaissIndexStrategy:
         """
 
         query_vector = np.asarray(query_vector).astype('float32')
-        faiss.normalize_L2(query_vector)
+        faisss.normalize_L2(query_vector)
         D, I = self.index.search(query_vector)
         return D, I
 
@@ -230,10 +230,10 @@ class FaissIndexStrategy:
             filename (str): path to save the index
         """
         if self.use_gpu:
-            index_cpu = faiss.index_gpu_to_cpu(self.index)
-            faiss.write_index(index_cpu, filename)
+            index_cpu = faisss.index_gpu_to_cpu(self.index)
+            faisss.write_index(index_cpu, filename)
         else:
-            faiss.write_index(self.index, filename)
+            faisss.write_index(self.index, filename)
         
 
         # Save the metadata of the index
@@ -264,9 +264,9 @@ class FaissIndexStrategy:
             self._metric = metadata['metric']
             self.kwargs.update(metadata['kwargs'])
         
-        self.index = faiss.read_index(filename)
+        self.index = faisss.read_index(filename)
         if self.use_gpu:
-            self._gpu_resources = faiss.StandardGpuResources()
-            self.index = faiss.index_gpu_to_cpu(self._gpu_resources, self.device, self.index)
+            self._gpu_resources = faisss.StandardGpuResources()
+            self.index = faisss.index_gpu_to_cpu(self._gpu_resources, self.device, self.index)
         
         self._set_default_parameters()

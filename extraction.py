@@ -8,19 +8,20 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
-from torch.multiprocessing import Process
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 from tqdm import tqdm
 from dataclasses import dataclass
-from model.model_init import CLIPModel, DinoV2Model, FeatExtractInterace
-from faiss.faiss_manager import FaissIndexStrategy
-from datasets.dataset_class import ObjectDataset, ImageProcessor
+
+from model import CLIPModel, DinoV2Model
+from faisss import FaissIndexStrategy
+from datasets import ObjectDataset, ImageProcessor
+
+
 import logging
 from datetime import timedelta
-from omegaconf import OmegaConf
 from PIL import Image
 from datetime import datetime
 import time

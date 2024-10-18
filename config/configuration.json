@@ -1,13 +1,13 @@
 {
     "models": {
-      "CLIP": {
-        "name": "None",
-        "type_model": "None"
-      },
-      "DinoV2": {
-        "name": "facebook/dinov2-large",
-        "type_model": "DinoV2"
-      }
+        "CLIP": {
+            "name": "hf-hub:apple/DFN5B-CLIP-ViT-H-14-378",
+            "type_model": "CLIP"
+        },
+        "DinoV2": {
+            "name": "None",
+            "type_model": "None"
+        }
     },
     "faiss": {
       "index_type": "ivfflat",
