@@ -489,7 +489,7 @@ def main():
         config = load_config("config.json")
         
         model_type = ModelType.CLIP if config.models['name'] is not None else ModelType.DINOV2
-
+        print(f"Using model: {model_type}")
         logger, _ = setup_logging(config.output_dir)
         logger.info("Starting main process")
 
