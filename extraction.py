@@ -504,7 +504,7 @@ def main():
             logger.info(f"Launching distributed processes with world size {config.world_size}")
             torch.multiprocessing.spawn(
                 run_extraction,
-                args=(config,),
+                args=(config,model_type),
                 nprocs=config.world_size,
                 join=True
             )
