@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 from tqdm import tqdm
 from dataclasses import dataclass
-from model import CLIPModel, DinoV2Model
+from model import CLIPModel, DinoV2Model, FeatExtractInterace
 from faisss import FaissIndexStrategy
 from datasets import ObjectDataset, ImageProcessor
 import logging
@@ -155,7 +155,7 @@ def setup_logging(output_dir: str, rank: Optional[int] = None) -> Tuple[logging.
   
   return logger, log_file
 
-def setup_distributed(rank:int, world_size:int, logger:logging.logger, timeout:int=3600) -> None:
+def setup_distributed(rank:int, world_size:int, logger:logging.Logger, timeout:int=3600) -> None:
     """Initialize distributed training
 
     Args:
@@ -178,7 +178,7 @@ def setup_distributed(rank:int, world_size:int, logger:logging.logger, timeout:i
         logger.error(f"Failed to initialize distributed process group: {e}")
         raise e
 
-def cleanup(logger: logging.logger)->None:
+def cleanup(logger: logging.Logger)->None:
     """Clean up the distributed training
 
     Args:
