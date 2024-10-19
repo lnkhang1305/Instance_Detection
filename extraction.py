@@ -112,6 +112,7 @@ def load_config(config_path:str) -> Config:
         models= {k: ModelConfig(**v) for k, v in config_dict['models'].items()},
         faiss=FaissConfig(**config_dict['faiss']),
         data = DataConfig(**config_dict['data']),
+        output_dir= config_dict['output_dir'],
         distributed=config_dict['distributed'],
         world_size=config_dict['world_size'],
         seed = config_dict.get('seed',42)
