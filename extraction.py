@@ -340,7 +340,7 @@ def run_extraction(
     if config.distributed:
         setup_distributed(rank, config.world_size, logger)
     
-
+ 
     try:
         device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {device}")
