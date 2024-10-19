@@ -29,22 +29,21 @@ class ImageProcessor:
         return image
 
 class ObjectDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir: str, transform: Optional[transforms.Compose], logger: logging.Logger, target_size: Optional[Tuple[int, int]] = None):
+    def __init__(self, data_dir: str, transform: Optional[transforms.Compose],target_size: Optional[Tuple[int, int]] = None):
         self.data_dir = Path(data_dir)
         self.dataset_type = 'Object'
         self.transform = transform
         self.target_size = target_size
         self.image_info_cfg = self._load_configuration()
-        self.logger = logger  # Corrected the logger assignment
 
     def _load_configuration(self):
         """Create configuration for object dataset"""
         image_config = []
         global_index = 0
-        self.logger.info(f"[DEBUG] Loading configuration for object dataset from {self.data_dir}")  
+        print(f"[DEBUG] Loading configuration for object dataset from {self.data_dir}")  
         for source_dir in sorted(self.data_dir.glob('*')):
             object_name = source_dir.stem
-            # self.logger.info(f"[DEBUG] Processing object: {object_name}")  
+            # print(f"[DEBUG] Processing object: {object_name}")  
             image_paths_list = sorted(source_dir.glob('images/*.*'))
             mask_paths_list = sorted(source_dir.glob('masks/*.*'))
 
@@ -59,8 +58,8 @@ class ObjectDataset(torch.utils.data.Dataset):
                 }
                 image_config.append(cfg)
                 global_index += 1
-                # self.logger.info(f"[DEBUG] Added configuration for image: {img_path}, mask: {mask_path}")
-        self.logger.info(f"[DEBUG] Total configurations loaded: {len(image_config)}")
+                # print(f"[DEBUG] Added configuration for image: {img_path}, mask: {mask_path}")
+        print(f"[DEBUG] Total configurations loaded: {len(image_config)}")
         return image_config
 
     def __len__(self) -> int:
@@ -68,15 +67,15 @@ class ObjectDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, str]]:
         """Get an item from the dataset"""
-        self.logger.info(f"[DEBUG] Fetching item at index {idx}")
+        print(f"[DEBUG] Fetching item at index {idx}")
         path = self.image_info_cfg[idx]['image_path']
         image = Image.open(path).convert('RGB')
-        self.logger.info(f"[DEBUG] Opened image: {path}")
+        print(f"[DEBUG] Opened image: {path}")
         image = ImageProcessor.preprocess_image(image, self.target_size)
 
         if self.transform:
             image = self.transform(image)
-            self.logger.info("[DEBUG] Applied transforms to image")
+            print("[DEBUG] Applied transforms to image")
 
         return image, self.image_info_cfg[idx]
 

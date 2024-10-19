@@ -365,7 +365,6 @@ def run_extraction(
         dataset = ObjectDataset(
             data_dir = config.data.data_dir,
             transform = transformer,
-            logger=logging,
             target_size=config.data.target_size
         )
         sampler = DistributedSampler(dataset) if config.distributed else None
