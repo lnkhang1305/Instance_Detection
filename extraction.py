@@ -4,6 +4,7 @@ import torch.multiprocessing.spawn
 sys.path.append('.')
 import os
 import json
+import argparse
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -483,8 +484,12 @@ def main():
     """
     Main entry point for the extraction and indexing pipeline.
     """
+    parser = argparse.ArgumentParser(description="Extraction and Indexing Pipeline")
+    parser.add_argument('--config', type=str, required=True, help="Path to the config.json file")
+    args = parser.parse_args()
+
     try:
-        config = load_config("config.json")
+        config = load_config(args.config)
         
         model_type = ModelType.CLIP if config.models['name'] is not None else ModelType.DINOV2
         print(f"Using model: {model_type}")
