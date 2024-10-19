@@ -6,6 +6,7 @@ import torch
 import json
 from PIL import Image
 import os
+import logging
 
 
 class ImageProcessor:
@@ -28,21 +29,22 @@ class ImageProcessor:
         return image
 
 class ObjectDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir: str, transform: Optional[transforms.Compose], target_size: Optional[Tuple[int, int]] = None):
+    def __init__(self, data_dir: str, transform: Optional[transforms.Compose], logging: logging.Logger, target_size: Optional[Tuple[int, int]] = None):
         self.data_dir = Path(data_dir)
         self.dataset_type = 'Object'
         self.transform = transform
         self.target_size = target_size
         self.image_info_cfg = self._load_configuration()
+        self.logging = logging
 
     def _load_configuration(self):
         """Create configuration for object dataset"""
         image_config = []
         global_index = 0
-        print(f"[DEBUG] Loading configuration for object dataset from {self.data_dir}")
+        self.logging.info(f"[DEBUG] Loading configuration for object dataset from {self.data_dir}")
         for source_dir in sorted(self.data_dir.glob('*')):
             object_name = source_dir.stem
-            print(f"[DEBUG] Processing object: {object_name}")
+            self.logging.INFO(f"[DEBUG] Processing object: {object_name}")
             image_paths_list = sorted(source_dir.glob('images/*.*'))
             mask_paths_list = sorted(source_dir.glob('masks/*.*'))
 
@@ -57,8 +59,8 @@ class ObjectDataset(torch.utils.data.Dataset):
                 }
                 image_config.append(cfg)
                 global_index += 1
-                print(f"[DEBUG] Added configuration for image: {img_path}, mask: {mask_path}")
-        print(f"[DEBUG] Total configurations loaded: {len(image_config)}")
+                self.logging.info(f"[DEBUG] Added configuration for image: {img_path}, mask: {mask_path}")
+        self.logging.info(f"[DEBUG] Total configurations loaded: {len(image_config)}")
         return image_config
 
     def __len__(self) -> int:
@@ -66,15 +68,15 @@ class ObjectDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, str]]:
         """Get an item from the dataset"""
-        print(f"[DEBUG] Fetching item at index {idx}")
+        self.logging.info(f"[DEBUG] Fetching item at index {idx}")
         path = self.image_info_cfg[idx]['image_path']
         image = Image.open(path).convert('RGB')
-        print(f"[DEBUG] Opened image: {path}")
+        self.logging.info(f"[DEBUG] Opened image: {path}")
         image = ImageProcessor.preprocess_image(image, self.target_size)
 
         if self.transform:
             image = self.transform(image)
-            print("[DEBUG] Applied transforms to image")
+            self.logging.info("[DEBUG] Applied transforms to image")
 
         return image, self.image_info_cfg[idx]
 
