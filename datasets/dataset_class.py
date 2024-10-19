@@ -65,19 +65,33 @@ class ObjectDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.image_info_cfg)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, str]]:
-        """Get an item from the dataset"""
-        # print(f"[DEBUG] Fetching item at index {idx}")
-        path = self.image_info_cfg[idx]['image_path']
-        image = Image.open(path).convert('RGB')
-        print(f"[DEBUG] Opened image: {path}")
-        image = ImageProcessor.preprocess_image(image, self.target_size[0])
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        cfg = self.image_info_cfg[idx]
+        
+        try:
+            image = Image.open(cfg['image_path']).convert('RGB')
+            print(f"[DEBUG] Opened image: {cfg['image_path']}")
+            
+            if self.target_size:
+                image = ImageProcessor.preprocess_image(image, self.target_size[0])
 
-        if self.transform:
-            image = self.transform(image)
-            # print("[DEBUG] Applied transforms to image")
+            if self.transform:
+                image = self.transform(image)
 
-        return image, self.image_info_cfg[idx]
+            return_cfg = {
+                'id': int(cfg['id']),
+                'object_name': str(cfg['object_name']),
+                'data_dir': str(cfg['data_dir']),
+                'image_path': str(cfg['image_path']),
+                'mask_path': str(cfg['mask_path']),
+                'dataset_type': str(cfg['dataset_type'])
+            }
+
+            return image, return_cfg
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to load image at index {idx}: {str(e)}")
+            raise
 
 
 class SceneDataset(torch.utils.data.Dataset):

@@ -373,7 +373,8 @@ def run_extraction(
             batch_size=config.data.batch_size,
             num_workers=config.data.num_workers,
             sampler=sampler,
-            pin_memory=True
+            pin_memory=True,
+            shuffle=False
         )
         logger.info(f"Dataset size: {len(dataset)}, Batch size: {config.data.batch_size}")
 
