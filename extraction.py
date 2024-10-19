@@ -307,6 +307,7 @@ def process_batch(
 
     for i, meta in enumerate(tqdm(metadata, desc='Processing masks', leave=True,ncols=100, bar_format='{l_bar}{bar}|')):
         try:
+            print(meta)
             mask = Image.open(meta['mask_path']).convert('L') # conver to grayscale
             mask = ImageProcessor.preprocess_image(mask, config.data.target_size)
             masks[i] = mask.unsqueeze(0)
@@ -383,7 +384,7 @@ def run_extraction(
             logger.info("Initializing Faiss index...")
             faiss_index = FaissIndexStrategy(
                 index_type=config.faiss.index_type,
-                dimension=config.faiss.dimension,  # Ensure this matches CLIP feature dimension
+                dimension=config.faiss.dimension,  
                 use_gpu=config.faiss.use_gpu,
                 device=config.faiss.device,
                 metric=config.faiss.metric,

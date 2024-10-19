@@ -70,7 +70,7 @@ class ObjectDataset(torch.utils.data.Dataset):
         
         try:
             image = Image.open(cfg['image_path']).convert('RGB')
-            print(f"[DEBUG] Opened image: {cfg['image_path']}")
+            # print(f"[DEBUG] Opened image: {cfg['image_path']}")
             
             if self.target_size:
                 image = ImageProcessor.preprocess_image(image, self.target_size[0])
