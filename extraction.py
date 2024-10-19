@@ -1,4 +1,3 @@
-%%writefile /kaggle/working/Instance_Detection/extraction2.py
 # extraction.py
 import sys
 import torch.multiprocessing.spawn
@@ -312,7 +311,7 @@ def process_batch(
         (batch_size, 1, images.size(2), images.size(3)), dtype=torch.float32
     ).to(device)
 
-    for i, mask in enumerate(tqdm(mask_list, desc='Processing masks', leave=False,ncols=100, bar_format='{l_bar}{bar}|')):
+    for i, mask in enumerate(mask_list):
         try:
           
             mask = Image.open(mask).convert('L') 

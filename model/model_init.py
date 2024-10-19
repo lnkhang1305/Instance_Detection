@@ -41,10 +41,13 @@ class DinoV2Model(FeatExtractInterace):
     
     def extract_features(self, images: List[Union[torch.Tensor, Image.Image]]) -> torch.Tensor:
         print(f"[DinoV2] Extracting features from {len(images)} images")
-        inputs = self.procesor(images=images, return_tensors='pt')
+        inputs = self.processor(images=images, return_tensors='pt')
         print(f"[DinoV2] Input shape: {inputs['pixel_values'].shape}")
         with torch.no_grad():
-            outputs = self.model(**inputs)
+            if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                outputs = self.model.module(**inputs)
+            else:
+                outputs = self.model(**inputs)
         features = outputs.last_hidden_state[:, 0, :]
         print(f"[DinoV2] Extracted features shape: {features.shape}")
         return features
@@ -61,13 +64,23 @@ class CLIPModel(FeatExtractInterace):
         print(f"[CLIP] Extracting features from {len(images)} images")
         # if isinstance(images[0], Image.Image):
         #     print("[CLIP] Converting PIL images to tensors")
-        images = [self.preprocess(image) for image in images]
+        processed_images = []
+        for image in images:
+            if isinstance(image, Image.Image):
+                processed_images.append(self.preprocess(image))
+            elif isinstance(image, torch.Tensor):
+                processed_images.append(image)
+            else:
+                raise TypeError(f"[CLIP] Unsupported image type: {type(image)}")
         
-        stacked_images = torch.stack(images)
+        stacked_images = torch.stack(processed_images)
         print(f"[CLIP] Input tensor shape: {stacked_images.shape}")
         
         with torch.no_grad():
-            features = self.model.encode_image(stacked_images)
+            if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                features = self.model.module.encode_image(stacked_images)
+            else:
+                features = self.model.encode_image(stacked_images)
         print(f"[CLIP] Extracted features shape: {features.shape}")
         return features
 
