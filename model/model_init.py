@@ -59,9 +59,9 @@ class CLIPModel(FeatExtractInterace):
     
     def extract_features(self, images: List[Union[torch.Tensor, Image.Image]]) -> torch.Tensor:
         print(f"[CLIP] Extracting features from {len(images)} images")
-        if isinstance(images[0], Image.Image):
-            print("[CLIP] Converting PIL images to tensors")
-            images = [self.preprocess(image) for image in images]
+        # if isinstance(images[0], Image.Image):
+        #     print("[CLIP] Converting PIL images to tensors")
+        images = [self.preprocess(image) for image in images]
         
         stacked_images = torch.stack(images)
         print(f"[CLIP] Input tensor shape: {stacked_images.shape}")

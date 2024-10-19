@@ -1,3 +1,4 @@
+%%writefile /kaggle/working/Instance_Detection/extraction2.py
 # extraction.py
 import sys
 import torch.multiprocessing.spawn
@@ -26,7 +27,7 @@ import time
 from torchvision import transforms
 from enum import Enum
 
-
+import matplotlib.pyplot as plt
 class ModelType(Enum):
     CLIP = "CLIP"
     DINOV2 = "DINOV2"
@@ -221,12 +222,11 @@ class FeatureExtractor:
         self.logger = logger
 
         self.device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
-        self.model = ModelFactory.create_model(model_type, model_config)
-        # self.model.model.to(self.device)
-        self.model.model.to(self.device)
+        self.base_model = ModelFactory.create_model(model_type, model_config)
+        self.base_model.model = self.base_model.model.to(self.device)
 
         if self.config.distributed:
-            self.model.model = DDP(self.model.model, device_ids=[rank], output_device=rank)
+            self.base_model.model = DDP(self.base_model.model, device_ids=[rank], output_device=rank)
             self.logger.info("Wrapped models with DistributedDataParallel")
         self.logger.info("FeatureExtractor initialized and models set to eval mode")
     
@@ -261,16 +261,21 @@ class FeatureExtractor:
         Returns:
             np.ndarray: CLIP feature vectors (B, D).
         """
-        binary_masks = self._prepare_binary_mask(masks)  # (B, H, W)
-        binary_masks = binary_masks.unsqueeze(1)  # (B, 1, H, W)
+        binary_masks = self._prepare_binary_mask(masks)  
+        
         binary_masks = binary_masks.expand(-1, images.size(1), -1, -1) 
         self.logger.info("Starting CLIP feature extraction")
         masked_images = images * binary_masks
-
-
+        
+       
         self.logger.info(f"Starting {self.model_type.value} feature extraction")
-        features = self.model.module.extract_features(masked_images)
-        features_numpy = features.cpu().numpy()
+        
+        if self.config.distributed:
+            features = self.base_model.extract_features(masked_images)
+        else:
+            features = self.base_model.extract_features(masked_images)
+        
+        features_numpy = features.cpu().detach().numpy()
         self.logger.info(f"Extracted features with shape {features_numpy.shape}")
             
         return features_numpy
@@ -296,6 +301,8 @@ def process_batch(
         Tuple[np.ndarray, List[Dict[str,Any]]]: Extracted features and corresponding  metadata
     """
     images, metadata = batch
+    
+    mask_list = metadata['mask_path']
     batch_size = images.size(0)
 
     logger.info(f"Processing batch of size {batch_size}")
@@ -305,14 +312,15 @@ def process_batch(
         (batch_size, 1, images.size(2), images.size(3)), dtype=torch.float32
     ).to(device)
 
-    for i, meta in enumerate(tqdm(metadata, desc='Processing masks', leave=True,ncols=100, bar_format='{l_bar}{bar}|')):
+    for i, mask in enumerate(tqdm(mask_list, desc='Processing masks', leave=False,ncols=100, bar_format='{l_bar}{bar}|')):
         try:
-            print(meta)
-            mask = Image.open(meta['mask_path']).convert('L') # conver to grayscale
-            mask = ImageProcessor.preprocess_image(mask, config.data.target_size)
-            masks[i] = mask.unsqueeze(0)
+          
+            mask = Image.open(mask).convert('L') 
+            mask = ImageProcessor.preprocess_image(mask, config.data.target_size[0])
+            mask = transforms.ToTensor()(mask)  
+            masks[i] = mask
         except Exception as e:
-            logger.error(f"Error processing mask {meta['mask_path']}: {e}")
+            logger.error(f"Error processing mask {mask}: {e}")
             raise
             
     
