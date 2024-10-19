@@ -25,6 +25,9 @@ from datetime import datetime
 import time
 from torchvision import transforms
 from enum import Enum
+import matplotlib.pyplot as plt
+from torchvision.utils import save_image
+import os
 
 import matplotlib.pyplot as plt
 class ModelType(Enum):
@@ -189,6 +192,8 @@ def cleanup(logger: logging.Logger)->None:
     dist.destroy_process_group()
     logger.info("Destroyed distributed process group")
 
+
+
 # =======================
 # Feature Extraction Class
 # =======================
@@ -228,6 +233,36 @@ class FeatureExtractor:
             self.base_model.model = DDP(self.base_model.model, device_ids=[rank], output_device=rank)
             self.logger.info("Wrapped models with DistributedDataParallel")
         self.logger.info("FeatureExtractor initialized and models set to eval mode")
+
+
+    def save_sample_images(self, original_images: torch.Tensor, masked_images: torch.Tensor, num_samples: int = 5):
+        """
+        Save a sample of original and masked images as separate files in a folder.
+        
+        Args:
+            original_images (torch.Tensor): Batch of original images.
+            masked_images (torch.Tensor): Batch of masked images.
+            num_samples (int): Number of sample images to save.
+        """
+        num_samples = min(num_samples, original_images.size(0))
+        
+        # Create directories to save the images if they don't exist
+        save_dir = os.path.join(self.config.output_dir, "sample_images")
+        original_dir = os.path.join(save_dir, "original")
+        masked_dir = os.path.join(save_dir, "masked")
+        os.makedirs(original_dir, exist_ok=True)
+        os.makedirs(masked_dir, exist_ok=True)
+        
+        for i in range(num_samples):
+            # Save original image
+            save_image(original_images[i], os.path.join(original_dir, f"original_{i}.png"), normalize=True)
+            
+            # Save masked image
+            save_image(masked_images[i], os.path.join(masked_dir, f"masked_{i}.png"), normalize=True)
+        
+        self.logger.info(f"Saved {num_samples} sample images to {save_dir}")
+        self.logger.info(f"Original images saved in: {original_dir}")
+        self.logger.info(f"Masked images saved in: {masked_dir}")
     
 
     def _prepare_binary_mask(self, mask: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
@@ -266,13 +301,12 @@ class FeatureExtractor:
         self.logger.info("Starting CLIP feature extraction")
         masked_images = images * binary_masks
         
-       
+        self.save_sample_images(images, masked_images)
         self.logger.info(f"Starting {self.model_type.value} feature extraction")
         
-        if self.config.distributed:
-            features = self.base_model.extract_features(masked_images)
-        else:
-            features = self.base_model.extract_features(masked_images)
+        features = self.base_model.extract_features(masked_images)
+       
+           
         
         features_numpy = features.cpu().detach().numpy()
         self.logger.info(f"Extracted features with shape {features_numpy.shape}")
