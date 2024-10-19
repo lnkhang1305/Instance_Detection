@@ -138,11 +138,11 @@ def setup_logging(output_dir: str, rank: Optional[int] = None) -> Tuple[logging.
   log_file = log_dir / f"process_log_{timestamp}{rank_suffix}.txt"
   
   logger = logging.getLogger(f"Rank{rank}" if rank is not None else "Main")
-  logger.setLevel(logging.info)
+  logger.setLevel(logging.INFO)
   
   if not logger.handlers:
       file_handler = logging.FileHandler(log_file)
-      file_handler.setLevel(logging.info)
+      file_handler.setLevel(logging.INFO)
       file_formatter = logging.Formatter(
           '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
       )
