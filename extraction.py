@@ -14,12 +14,9 @@ from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 from tqdm import tqdm
 from dataclasses import dataclass
-
 from model import CLIPModel, DinoV2Model
 from faisss import FaissIndexStrategy
 from datasets import ObjectDataset, ImageProcessor
-
-
 import logging
 from datetime import timedelta
 from PIL import Image

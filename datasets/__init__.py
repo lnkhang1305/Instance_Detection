@@ -1,1 +1,1 @@
-from .dataset_class import ObjectDataset, SceneDataset
+from .dataset_class import ObjectDataset, SceneDataset, ImageProcessor
