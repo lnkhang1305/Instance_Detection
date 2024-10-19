@@ -457,7 +457,11 @@ def run_extraction(
         
         if config.distributed:
             gathered_features = [None for _ in range(config.world_size)]
+            logger.info("Starting all_gather_object for features")
+            start_time = time.time()
             dist.all_gather_object(gathered_features, all_features)
+            end_time = time.time()
+            logger.info(f"Completed all_gather_object for features in {end_time - start_time:.2f} seconds")
             all_features = np.vstack([f for proc_features in gathered_features if proc_features for f in proc_features])
             
             gathered_metadata = [None for _ in range(config.world_size)]
@@ -530,7 +534,6 @@ def main():
     parser = argparse.ArgumentParser(description="Extraction and Indexing Pipeline")
     parser.add_argument('--config', type=str, required=True, help="Path to the config.json file")
     args = parser.parse_args()
-
     try:
         config = load_config(args.config)
         model_type = ModelType.CLIP if config.models['CLIP'].name is not None else ModelType.DINOV2
