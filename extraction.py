@@ -367,14 +367,15 @@ def run_extraction(
             transform = transformer,
             target_size=config.data.target_size
         )
-        sampler = DistributedSampler(dataset) if config.distributed else None
+        sampler = DistributedSampler(dataset, shuffle=False) if config.distributed else None
         dataloader = DataLoader(
             dataset,
             batch_size=config.data.batch_size,
             num_workers=config.data.num_workers,
             sampler=sampler,
             pin_memory=True,
-            shuffle=False
+            shuffle=False,
+            drop_last=False
         )
         logger.info(f"Dataset size: {len(dataset)}, Batch size: {config.data.batch_size}")
 
