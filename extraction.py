@@ -138,11 +138,11 @@ def setup_logging(output_dir: str, rank: Optional[int] = None) -> Tuple[logging.
   log_file = log_dir / f"process_log_{timestamp}{rank_suffix}.txt"
   
   logger = logging.getLogger(f"Rank{rank}" if rank is not None else "Main")
-  logger.setLevel(logging.DEBUG)
+  logger.setLevel(logging.info)
   
   if not logger.handlers:
       file_handler = logging.FileHandler(log_file)
-      file_handler.setLevel(logging.DEBUG)
+      file_handler.setLevel(logging.info)
       file_formatter = logging.Formatter(
           '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
       )
@@ -227,7 +227,7 @@ class FeatureExtractor:
 
         if self.config.distributed:
             self.model.model = DDP(self.model.model, device_ids=[rank], output_device=rank)
-            self.logger.debug("Wrapped models with DistributedDataParallel")
+            self.logger.info("Wrapped models with DistributedDataParallel")
         self.logger.info("FeatureExtractor initialized and models set to eval mode")
     
 
@@ -264,14 +264,14 @@ class FeatureExtractor:
         binary_masks = self._prepare_binary_mask(masks)  # (B, H, W)
         binary_masks = binary_masks.unsqueeze(1)  # (B, 1, H, W)
         binary_masks = binary_masks.expand(-1, images.size(1), -1, -1) 
-        self.logger.debug("Starting CLIP feature extraction")
+        self.logger.info("Starting CLIP feature extraction")
         masked_images = images * binary_masks
 
 
-        self.logger.debug(f"Starting {self.model_type.value} feature extraction")
+        self.logger.info(f"Starting {self.model_type.value} feature extraction")
         features = self.model.module.extract_features(masked_images)
         features_numpy = features.cpu().numpy()
-        self.logger.debug(f"Extracted features with shape {features_numpy.shape}")
+        self.logger.info(f"Extracted features with shape {features_numpy.shape}")
             
         return features_numpy
 
@@ -298,7 +298,7 @@ def process_batch(
     images, metadata = batch
     batch_size = images.size(0)
 
-    logger.debug(f"Processing batch of size {batch_size}")
+    logger.info(f"Processing batch of size {batch_size}")
     images = images.to(device)
     
     masks = torch.zeros(
@@ -343,8 +343,8 @@ def run_extraction(
 
     try:
         device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else 'cpu')
-        logger.debug(f"Using device: {device}")
-        logger.debug("Initializing CLIP and DinoV2 model...")
+        logger.info(f"Using device: {device}")
+        logger.info("Initializing CLIP and DinoV2 model...")
 
         
 
@@ -358,7 +358,7 @@ def run_extraction(
         )
 
         # Initialize the dataset and the dataloader
-        logging.debug("Setting up the dataset and the dataloader")
+        logging.info("Setting up the dataset and the dataloader")
         transformer = transforms.Compose([
             transforms.ToTensor()
         ])
@@ -375,10 +375,10 @@ def run_extraction(
             sampler=sampler,
             pin_memory=True
         )
-        logger.debug(f"Dataset size: {len(dataset)}, Batch size: {config.data.batch_size}")
+        logger.info(f"Dataset size: {len(dataset)}, Batch size: {config.data.batch_size}")
 
         if rank == 0:
-            logger.debug("Initializing Faiss index...")
+            logger.info("Initializing Faiss index...")
             faiss_index = FaissIndexStrategy(
                 index_type=config.faiss.index_type,
                 dimension=config.faiss.dimension,  # Ensure this matches CLIP feature dimension
@@ -391,7 +391,7 @@ def run_extraction(
                 nprobe=config.faiss.nprobe
             )
             
-            logger.debug('Faiss indexes initialized')
+            logger.info('Faiss indexes initialized')
         
         all_features = []
         all_metadata = []
@@ -406,7 +406,7 @@ def run_extraction(
                 features, metadata = process_batch(batch, extractor, device, logger, config)
                 all_features.append(features)
                 all_metadata.extend(metadata)
-                logger.debug(f"Completed batch {batch_idx + 1}/{len(dataloader)}")
+                logger.info(f"Completed batch {batch_idx + 1}/{len(dataloader)}")
             except Exception as e:
                 logger.error(f"Error processing batch {batch_idx}: {e}")
                 raise
@@ -496,7 +496,7 @@ def main():
 
         torch.manual_seed(config.seed)
         np.random.seed(config.seed)
-        logger.debug(f"Random seed set to {config.seed}")
+        logger.info(f"Random seed set to {config.seed}")
 
         if config.distributed:
             logger.info(f"Launching distributed processes with world size {config.world_size}")
