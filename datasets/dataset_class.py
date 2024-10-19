@@ -14,14 +14,14 @@ class ImageProcessor:
     @staticmethod
     def preprocess_image(image: Image.Image, target_size: Optional[int] = None) -> Image.Image:
         """Preprocess image with resizing and normalization"""
-        print(f"[DEBUG] Original image size: {image.size}")
+        # print(f"[DEBUG] Original image size: {image.size}")
         if target_size:
             w, h = image.size
             if min(w, h) > target_size:
-                print(f"[DEBUG] Resizing image to thumbnail with target size {target_size}")
+                # print(f"[DEBUG] Resizing image to thumbnail with target size {target_size}")
                 image.thumbnail((target_size, target_size), Image.LANCZOS)
             else:
-                print(f"[DEBUG] Resizing image to be divisible by 14 (original size: {w}x{h})")
+                # print(f"[DEBUG] Resizing image to be divisible by 14 (original size: {w}x{h})")
                 new_w = ((w + 13) // 14) * 14
                 new_h = ((h + 13) // 14) * 14
                 image = image.resize((new_w, new_h), Image.LANCZOS)
@@ -67,15 +67,15 @@ class ObjectDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, str]]:
         """Get an item from the dataset"""
-        print(f"[DEBUG] Fetching item at index {idx}")
+        # print(f"[DEBUG] Fetching item at index {idx}")
         path = self.image_info_cfg[idx]['image_path']
         image = Image.open(path).convert('RGB')
         print(f"[DEBUG] Opened image: {path}")
-        image = ImageProcessor.preprocess_image(image, self.target_size)
+        image = ImageProcessor.preprocess_image(image, self.target_size[0])
 
         if self.transform:
             image = self.transform(image)
-            print("[DEBUG] Applied transforms to image")
+            # print("[DEBUG] Applied transforms to image")
 
         return image, self.image_info_cfg[idx]
 

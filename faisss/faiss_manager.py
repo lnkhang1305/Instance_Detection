@@ -85,7 +85,7 @@ class FaissIndexStrategy:
                 config.storeTranspose = kwargs.get('store_transposed', False)
                 
                 # Create CPU index first
-                cpu_index = faiss.IndexFlatL2(self.dimension)
+                # cpu_index = faiss.IndexFlatL2(self.dimension)
                 # Convert to GPU
                 self.index = faiss.GpuIndexFlatL2(self._gpu_resources, self.dimension, config)
                 print(f"GPU Flat L2 index created on device {self.device}")
@@ -101,7 +101,7 @@ class FaissIndexStrategy:
                 config.storeTransposed = kwargs.get('store_transposed', False)
                 
                 # Create CPU index first
-                cpu_index = faiss.IndexFlatIP(self.dimension)
+                # cpu_index = faiss.IndexFlatIP(self.dimension)
                 # Convert to GPU
                 self.index = faiss.GpuIndexFlatIP(self._gpu_resources, self.dimension, config)
                 print(f"GPU Flat IP index created on device {self.device}")
@@ -118,11 +118,9 @@ class FaissIndexStrategy:
                 config.flatConfig.useFloat16 = kwargs.get('use_float16', False)
                 config.flatConfig.storeTransposed = kwargs.get('store_transposed', False)
 
-                # Create CPU index first
                 quantizer = faiss.IndexFlatL2(self.dimension)
                 cpu_index = faiss.IndexIVFFlat(quantizer, self.dimension, nlist, metric)
                 
-                # Convert to GPU
                 self.index = faiss.GpuIndexIVFFlat(self._gpu_resources, cpu_index, config)
                 print(f"GPU IVF Flat index created with nlist={nlist}")
             else:
@@ -145,11 +143,9 @@ class FaissIndexStrategy:
                 config.flatConfig.useFloat16 = kwargs.get('use_float16', False)
                 config.flatConfig.storeTransposed = kwargs.get('store_transposed', False)
 
-                # Create CPU index first
                 quantizer = faiss.IndexFlatL2(self.dimension)
                 cpu_index = faiss.IndexIVFPQ(quantizer, self.dimension, nlist, m, nbits, metric)
                 
-                # Convert to GPU
                 self.index = faiss.GpuIndexIVFPQ(self._gpu_resources, cpu_index, config)
                 print(f"GPU IVF PQ index created with nlist={nlist}, m={m}, nbits={nbits}")
             else:
@@ -179,12 +175,10 @@ class FaissIndexStrategy:
                 config.flatConfig.useFloat16 = kwargs.get('use_float16', False)
                 config.flatConfig.storeTransposed = kwargs.get('store_transposed', False)
                 
-                # Create CPU index first
                 quantizer = faiss.IndexFlatL2(self.dimension)
                 cpu_index = faiss.IndexIVFScalarQuantizer(quantizer, self.dimension, 
                                                         nlist, qtype, metric)
                 
-                # Convert to GPU
                 self.index = faiss.GpuIndexIVFScalarQuantizer(self._gpu_resources, cpu_index, config)
                 print(f"GPU IVF Scalar Quantizer index created with nlist={nlist}, qtype={qtype}")
             else:
