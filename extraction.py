@@ -483,7 +483,7 @@ def run_extraction(
             output_dir.mkdir(parents=True, exist_ok=True)
 
             faiss_index.add(all_features)
-            index_path = output_dir / f"feature_index_{model_type.value.lower()}.faiss"
+            index_path = output_dir / f"feature_index_{model_type.value.lower()}.bin"
             faiss_index.save(str(index_path))
             logger.info(f"Faiss index saved to {index_path}")
             
