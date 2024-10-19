@@ -178,6 +178,7 @@ def setup_distributed(rank:int, world_size:int, logger:logging.Logger, timeout:i
             timeout=timedelta(seconds=timeout)
         )
         logger.info(f"Distributed process group initialized with rank {rank}/{world_size}")
+        torch.cuda.set_device(rank)
         
     except Exception as e:
         logger.error(f"Failed to initialize distributed process group: {e}")
@@ -381,6 +382,8 @@ def run_extraction(
 
     if config.distributed:
         setup_distributed(rank, config.world_size, logger)
+        torch.cuda.set_device(rank)
+        logger.info(f"Rank {rank}: Set CUDA device to {rank}")
     
  
     try:
@@ -454,8 +457,12 @@ def run_extraction(
             except Exception as e:
                 logger.error(f"Error processing batch {batch_idx}: {e}")
                 raise
+            
         
         if config.distributed:
+            logger.info(f"Rank {rank} reached gather point at {time.time()}")
+            dist.barrier()  
+            logger.info(f"Rank {rank} passed barrier at {time.time()}")
             gathered_features = [None for _ in range(config.world_size)]
             logger.info("Starting all_gather_object for features")
             start_time = time.time()

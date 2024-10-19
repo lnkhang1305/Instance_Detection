@@ -75,6 +75,7 @@ class FaissIndexStrategy:
             print(f"GPU resources initialized on device {self.device}")
         
         metric = faiss.METRIC_L2 if self._metric == 'l2' else faiss.METRIC_INNER_PRODUCT
+        self.metric = metric
         print(f"Metric set to: {self._metric}")
 
         if self.index_type == "flat_l2":
@@ -131,9 +132,8 @@ class FaissIndexStrategy:
 
         elif self.index_type == "ivfpq":
             nlist = kwargs.get('nlist', 300)
-            m = kwargs.get('m', 8)  # number of centroid IDs in final compressed vectors
-            nbits = kwargs.get('nbits', 8)  # number of bits in each centroid
-
+            m = kwargs.get('m', 8)  
+            nbits = kwargs.get('nbits', 8) 
             if self.use_gpu:
                 config = faiss.GpuIndexIVFPQConfig()
                 config.device = self.device
