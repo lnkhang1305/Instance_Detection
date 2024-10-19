@@ -222,14 +222,12 @@ class FeatureExtractor:
 
         self.device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
         self.model = ModelFactory.create_model(model_type, model_config)
-        self.model.to(self.device)
-
+        # self.model.model.to(self.device)
+        self.model.model.to(self.device)
 
         if self.config.distributed:
-            self.model = DDP(self.model, device_ids=[rank], output_device=rank)
+            self.model.model = DDP(self.model.model, device_ids=[rank], output_device=rank)
             self.logger.debug("Wrapped models with DistributedDataParallel")
-        self.clip_model.eval()
-        self.dino_model.eval()
         self.logger.info("FeatureExtractor initialized and models set to eval mode")
     
 
