@@ -94,7 +94,12 @@ class ObjectDataset(torch.utils.data.Dataset):
             print(f"[ERROR] Failed to load image at index {idx}: {str(e)}")
             raise
 
-
+def is_intable(s):
+    try:
+        int(s)  
+        return True
+    except ValueError:
+        return False
 class SceneDataset(torch.utils.data.Dataset):
 
     def __init__(self, data_dir: str, cfg_file_path: str, transform: Optional[transforms.Compose] = None) -> None:
@@ -119,10 +124,12 @@ class SceneDataset(torch.utils.data.Dataset):
             id_ = cfg['id']
             mode, type_, img_name, extension = filename.split('.')
             image_name = img_name + '.' + extension
-            if ((type_ == "leisure_zone" or type_=='meeting_room') and mode == 'easy') or ((type_ == "office" or type_=='pantry_room') and mode == 'hard'):
-                type_ = type_ + '_001'
-            else:
-                type_ = type_ + '_002'
+            
+            if not is_intable(type_.split('_')[-1]):
+                if ((type_ == "leisure_zone" or type_=='meeting_room') and mode == 'easy') or ((type_ == "office" or type_=='pantry_room') and mode == 'hard'):
+                    type_ = type_ + '_001'
+                else:
+                    type_ = type_ + '_002'
 
             image_dir = os.path.join(self.data_dir, mode, type_, image_name)
 
@@ -136,6 +143,7 @@ class SceneDataset(torch.utils.data.Dataset):
             }
             
             list_image_info.append(new_cfg)
+            print(new_cfg['image_path'])
         print(f"[DEBUG] Total images loaded: {len(list_image_info)}")
         return list_image_info
 
