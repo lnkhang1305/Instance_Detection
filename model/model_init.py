@@ -196,10 +196,12 @@ class GroundingDinoClass:
                 get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer).replace('.', '')
                 for logit in logits_i
             ]
+            print(f"Phrase i in predict class {phrases_i}")
             scores_i = logits_i.max(dim=1)[0]
             boxes_xyxy = box_cxcywh_to_xyxy(boxes_i)
             
             print(f"[GroundingDino] Before NMS - Boxes: {len(boxes_xyxy)}, Phrases: {len(phrases_i)}")
+            
             boxes_i, scores_i, phrases_i = self.apply_nms(boxes_xyxy, scores_i, phrases_i, nms_threshold)
             print(f"[GroundingDino] After NMS - Boxes: {len(boxes_i)}, Phrases: {len(phrases_i)}")
             
@@ -232,11 +234,9 @@ class GroundingDinoClass:
                 - scores (torch.Tensor): Filtered confidence scores.
                 - phrases (List[str]): Filtered phrases.
         """
-        print(f"[GroundingDino] Applying NMS with IoU threshold: {iou_threshold}")
-        print(f"[GroundingDino] Before NMS - Boxes: {boxes.size(0)}")
+        
         
         keep_indices = torchvision.ops.nms(boxes, scores, iou_threshold)
-        print(f"[GroundingDino] After NMS - Kept boxes: {len(keep_indices)}")
         return boxes[keep_indices], scores[keep_indices], [phrases[i] for i in keep_indices]
 
 
