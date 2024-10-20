@@ -1,4 +1,3 @@
-%%writefile /kaggle/working/Instance_Detection/extraction.py
 # extraction.py
 import sys
 import torch.multiprocessing.spawn
