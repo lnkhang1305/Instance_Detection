@@ -196,7 +196,6 @@ class GroundingDinoClass:
                 get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer).replace('.', '')
                 for logit in logits_i
             ]
-            print(f"Phrase i in predict class {phrases_i}")
             scores_i = logits_i.max(dim=1)[0]
             boxes_xyxy = box_cxcywh_to_xyxy(boxes_i)
             
