@@ -35,7 +35,7 @@ class DinoV2Model(FeatExtractInterace):
     def __init__(self, model_name: str = 'facebook/dinov2-large'):
         print(f"[DinoV2] Initializing with model: {model_name}")
         self.model = AutoModel.from_pretrained(model_name)
-        self.processor = AutoImageProcessor.from_pretrained(model_name)
+        self.processor = AutoImageProcessor.from_pretrained(model_name, do_rescale=False)
         self.model.eval()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = self.model.to(self.device)
@@ -45,7 +45,7 @@ class DinoV2Model(FeatExtractInterace):
         print(f"[DinoV2] Extracting features from {len(images)} images")
         inputs = self.processor(images=images, return_tensors='pt')
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
+
         print(f"[DinoV2] Input shape: {inputs['pixel_values'].shape}")
         with torch.no_grad():
             if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):

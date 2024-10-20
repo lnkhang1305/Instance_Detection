@@ -299,7 +299,6 @@ class FeatureExtractor:
         binary_masks = self._prepare_binary_mask(masks)  
         
         binary_masks = binary_masks.expand(-1, images.size(1), -1, -1) 
-        self.logger.info("Starting CLIP feature extraction")
         masked_images = images * binary_masks
         
         self.save_sample_images(images, masked_images)
