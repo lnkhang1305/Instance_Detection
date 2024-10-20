@@ -37,11 +37,15 @@ class DinoV2Model(FeatExtractInterace):
         self.model = AutoModel.from_pretrained(model_name)
         self.processor = AutoImageProcessor.from_pretrained(model_name)
         self.model.eval()
-        print("[DinoV2] Model initialized and set to eval mode")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self.model.to(self.device)
+        print(f"[DinoV2] Model initialized and set to eval mode on {self.device}")
     
     def extract_features(self, images: List[Union[torch.Tensor, Image.Image]]) -> torch.Tensor:
         print(f"[DinoV2] Extracting features from {len(images)} images")
         inputs = self.processor(images=images, return_tensors='pt')
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
         print(f"[DinoV2] Input shape: {inputs['pixel_values'].shape}")
         with torch.no_grad():
             if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
@@ -58,12 +62,11 @@ class CLIPModel(FeatExtractInterace):
         print(f"[CLIP] Initializing with model: {model_name}")
         self.model, _, self.preprocess = open_clip.create_model_and_transforms(model_name)
         self.model.eval()
+        
         print("[CLIP] Model initialized and set to eval mode")
     
     def extract_features(self, images: List[Union[torch.Tensor, Image.Image]]) -> torch.Tensor:
         print(f"[CLIP] Extracting features from {len(images)} images")
-        # if isinstance(images[0], Image.Image):
-        #     print("[CLIP] Converting PIL images to tensors")
         processed_images = []
         for image in images:
             if isinstance(image, Image.Image):

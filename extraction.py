@@ -304,11 +304,7 @@ class FeatureExtractor:
         
         self.save_sample_images(images, masked_images)
         self.logger.info(f"Starting {self.model_type.value} feature extraction")
-        
-        features = self.base_model.extract_features(masked_images)
-       
-           
-        
+        features = self.base_model.extract_features(masked_images)      
         features_numpy = features.cpu().detach().numpy()
         self.logger.info(f"Extracted features with shape {features_numpy.shape}")
             
@@ -335,8 +331,10 @@ def process_batch(
         Tuple[np.ndarray, List[Dict[str,Any]]]: Extracted features and corresponding  metadata
     """
     images, metadata = batch
+    images = images.to(device)
     
     mask_list = metadata['mask_path']
+    mask_list = [mask.to(device) if torch.is_tensor(mask) else mask for mask in mask_list]
     batch_size = images.size(0)
 
     logger.info(f"Processing batch of size {batch_size}")
@@ -348,7 +346,6 @@ def process_batch(
 
     for i, mask in enumerate(mask_list):
         try:
-          
             mask = Image.open(mask).convert('L') 
             mask = ImageProcessor.preprocess_image(mask, config.data.target_size[0])
             mask = transforms.ToTensor()(mask)  
@@ -392,7 +389,6 @@ def run_extraction(
         logger.info("Initializing CLIP and DinoV2 model...")
 
         
-
         model_config = config.models[model_type.value]
         extractor = FeatureExtractor(
             model_type=model_type,
@@ -543,7 +539,8 @@ def main():
     args = parser.parse_args()
     try:
         config = load_config(args.config)
-        model_type = ModelType.CLIP if config.models['CLIP'].name is not None else ModelType.DINOV2
+        print(type(config.models['CLIP'].name))
+        model_type = ModelType.CLIP if config.models['CLIP'].name != "None" else ModelType.DINOV2
         print(f"Using model: {model_type}")
         logger, _ = setup_logging(config.output_dir)
         logger.info("Starting main process")

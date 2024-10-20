@@ -113,16 +113,22 @@ class SceneDataset(torch.utils.data.Dataset):
         self.cfg_info = sorted(self.cfg_info, key=lambda x: int(x['id']))
 
         for cfg in self.cfg_info:
-            filename = cfg['filename']
-            id = cfg['id']
-            mode, type, img_name, extension = filename.split('.')
+            print(cfg)
+            filename = cfg['file_name']
+            id_ = cfg['id']
+            mode, type_, img_name, extension = filename.split('.')
             image_name = img_name + '.' + extension
-            image_dir = os.path.join(self.data_dir, mode, type, image_name)
+            if ((type_ == "leisure_zone" or type_=='meeting_room') and mode == 'easy') or ((type_ == "office" or type_=='pantry_room') and mode == 'hard'):
+                type_ = type_ + '_001'
+            else:
+                type_ = type_ + '_002'
+
+            image_dir = os.path.join(self.data_dir, mode, type_, image_name)
 
             new_cfg = {
                 'dataset_type': 'Scene',
                 'data_dir': self.data_dir,
-                'id': id,
+                'id': id_,
                 'mode': mode,
                 'type': type,
                 'image_path': image_dir
@@ -147,3 +153,6 @@ class SceneDataset(torch.utils.data.Dataset):
             print("[DEBUG] Applied transforms to image")
         
         return image, image_cfg
+    
+
+
