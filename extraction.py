@@ -459,18 +459,33 @@ def run_extraction(
             logger.info(f"Rank {rank} reached gather point at {time.time()}")
             dist.barrier()  
             logger.info(f"Rank {rank} passed barrier at {time.time()}")
-            gathered_features = [None for _ in range(config.world_size)]
-            logger.info("Starting all_gather_object for features")
-            start_time = time.time()
-            dist.all_gather_object(gathered_features, all_features)
-            end_time = time.time()
-            logger.info(f"Completed all_gather_object for features in {end_time - start_time:.2f} seconds")
-            all_features = np.vstack([f for proc_features in gathered_features if proc_features for f in proc_features])
-            
-            gathered_metadata = [None for _ in range(config.world_size)]
-            dist.all_gather_object(gathered_metadata, all_metadata)
-            all_metadata = [m for proc_meta in gathered_metadata if proc_meta for m in proc_meta]
 
+
+            gathered_features = [None for _ in range(config.world_size)]
+            gathered_metadata = [None for _ in range(config.world_size)]
+
+
+            
+            dist.all_gather_object(gathered_features, all_features)
+            dist.all_gather_object(gathered_metadata, all_metadata)
+        
+         
+
+
+            flat_features = []
+            flat_metadata = []
+            
+            for proc_features, proc_metadata in zip(gathered_features, gathered_metadata):
+                if proc_features is not None and proc_metadata is not None:
+                    for feat, meta in zip(proc_features, proc_metadata):
+                        flat_features.append(feat)
+                        flat_metadata.append(meta)
+
+
+            sorted_pairs = sorted(zip(flat_features, flat_metadata), key=lambda x: x[1]['id'])
+
+            all_features = np.vstack([feat for feat, _ in sorted_pairs])
+            all_metadata = [meta for _, meta in sorted_pairs]
         else:
             all_features = np.vstack(all_features)
 
