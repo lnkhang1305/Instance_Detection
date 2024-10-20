@@ -1,3 +1,4 @@
+%%writefile /kaggle/working/Instance_Detection/extraction.py
 # extraction.py
 import sys
 import torch.multiprocessing.spawn
@@ -235,7 +236,6 @@ class FeatureExtractor:
             self.logger.info("Wrapped models with DistributedDataParallel")
         self.logger.info("FeatureExtractor initialized and models set to eval mode")
 
-
     def save_sample_images(self, original_images: torch.Tensor, masked_images: torch.Tensor, num_samples: int = 5):
         """
         Save a sample of original and masked images as separate files in a folder.
@@ -299,6 +299,7 @@ class FeatureExtractor:
         binary_masks = self._prepare_binary_mask(masks)  
         
         binary_masks = binary_masks.expand(-1, images.size(1), -1, -1) 
+        self.logger.info("Starting CLIP feature extraction")
         masked_images = images * binary_masks
         
         self.save_sample_images(images, masked_images)
@@ -308,8 +309,6 @@ class FeatureExtractor:
         self.logger.info(f"Extracted features with shape {features_numpy.shape}")
             
         return features_numpy
-
-
 
 def process_batch(
     batch: Tuple[torch.tensor, Dict[str, Any]],
@@ -352,13 +351,8 @@ def process_batch(
         except Exception as e:
             logger.error(f"Error processing mask {mask}: {e}")
             raise
-            
-    
     features = extractor.extract_features(images, masks)
     return features, metadata
-
-
-
 # =======================
 # Extraction and Indexing
 # =======================
@@ -375,19 +369,14 @@ def run_extraction(
     loader_start_time = time.time()
     logger, _ = setup_logging(config.output_dir, rank)
     logger.info(f"Rank {rank}: Starting extraction process")
-
     if config.distributed:
         setup_distributed(rank, config.world_size, logger)
         torch.cuda.set_device(rank)
         logger.info(f"Rank {rank}: Set CUDA device to {rank}")
-    
- 
     try:
         device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {device}")
         logger.info("Initializing CLIP and DinoV2 model...")
-
-        
         model_config = config.models[model_type.value]
         extractor = FeatureExtractor(
             model_type=model_type,
@@ -436,7 +425,7 @@ def run_extraction(
             logger.info('Faiss indexes initialized')
         
         all_features = []
-        all_metadata = []
+        all_metadata = {}
 
         logger.info("Starting batch processing")
         for batch_idx, batch in enumerate(
@@ -447,58 +436,73 @@ def run_extraction(
             try:
                 features, metadata = process_batch(batch, extractor, device, logger, config)
                 all_features.append(features)
-                all_metadata.extend(metadata)
+
+                if all_metadata == {}:
+                    all_metadata = metadata
+                else:
+                    
+                    all_metadata['id'] = torch.cat((all_metadata['id'], metadata['id']), dim=0)
+                    all_metadata['object_name'].extend(metadata['object_name'])
+                    all_metadata['data_dir'].extend(metadata['data_dir'])
+                    all_metadata['image_path'].extend(metadata['image_path'])
+                    all_metadata['mask_path'].extend(metadata['mask_path'])
+                    all_metadata['dataset_type'].extend(metadata['dataset_type'])
+                    
                 logger.info(f"Completed batch {batch_idx + 1}/{len(dataloader)}")
             except Exception as e:
                 logger.error(f"Error processing batch {batch_idx}: {e}")
                 raise
-            
-        
         if config.distributed:
             logger.info(f"Rank {rank} reached gather point at {time.time()}")
             dist.barrier()  
             logger.info(f"Rank {rank} passed barrier at {time.time()}")
-
-
             gathered_features = [None for _ in range(config.world_size)]
             gathered_metadata = [None for _ in range(config.world_size)]
-
-
-            
             dist.all_gather_object(gathered_features, all_features)
-            dist.all_gather_object(gathered_metadata, all_metadata)
-        
-         
-
-
+            dist.all_gather_object(gathered_metadata, all_metadata)    
             flat_features = []
-            flat_metadata = []
+            flat_metadata = {}
+            for proc_features in gathered_features:
+                if proc_features is not None:
+                    for feat_matrix in proc_features:
+                        flat_features.extend(feat_matrix)
+            print("Number of individual feature vectors:", len(flat_features))
+            for proc_metadata in gathered_metadata:
+                if proc_metadata is not None:
+                    if flat_metadata == {}:
+                        flat_metadata = proc_metadata
+                    else:
+                        flat_metadata['id'] = torch.cat((proc_metadata['id'], flat_metadata['id']), dim=0)
+                        flat_metadata['object_name'].extend(proc_metadata['object_name'])
+                        flat_metadata['data_dir'].extend(proc_metadata['data_dir'])
+                        flat_metadata['image_path'].extend(proc_metadata['image_path'])
+                        flat_metadata['mask_path'].extend(proc_metadata['mask_path'])
+                        flat_metadata['dataset_type'].extend(proc_metadata['dataset_type'])
+
+            index_pairs = list(enumerate(flat_metadata['id']))
+            sorted_index_pairs = sorted(index_pairs, key=lambda x: x[1])
+            sorted_indices = [pair[0] for pair in sorted_index_pairs]
+            flat_features_array = np.array(flat_features)
+            sorted_features = flat_features_array[sorted_indices]
             
-            for proc_features, proc_metadata in zip(gathered_features, gathered_metadata):
-                if proc_features is not None and proc_metadata is not None:
-                    for feat, meta in zip(proc_features, proc_metadata):
-                        flat_features.append(feat)
-                        flat_metadata.append(meta)
-
-
-            sorted_pairs = sorted(zip(flat_features, flat_metadata), key=lambda x: x[1]['id'])
-
-            all_features = np.vstack([feat for feat, _ in sorted_pairs])
-            all_metadata = [meta for _, meta in sorted_pairs]
+            sorted_metadata = {
+              'id': flat_metadata['id'][sorted_indices].tolist(),
+              'object_name': [flat_metadata['object_name'][i] for i in sorted_indices],
+              'data_dir': [flat_metadata['data_dir'][i] for i in sorted_indices],
+              'image_path': [flat_metadata['image_path'][i] for i in sorted_indices],
+              'mask_path': [flat_metadata['mask_path'][i] for i in sorted_indices],
+              'dataset_type': [flat_metadata['dataset_type'][i] for i in sorted_indices]
+            }
+            all_features = sorted_features
+            all_metadata = sorted_metadata
+            print("Shape of all_features:", all_features.shape)
+            print("Length of all metadata 'id':", len(all_metadata['id']))
+            print("First few sorted IDs:", all_metadata['id'][:5])
         else:
             all_features = np.vstack(all_features)
 
         if rank == 0:
-            first_class_metadata = all_metadata[:24]
-            class_ids = [meta['id'] for meta in first_class_metadata]
-            print(f"First class IDs: {class_ids}") 
             
-
-            for i in range(0, len(all_metadata), 24):
-                batch_meta = all_metadata[i:i+24]
-                batch_ids = [meta['id'] for meta in batch_meta]
-                logger.info(f"Class {i//24 + 1} IDs: {min(batch_ids)}-{max(batch_ids)}")
-
             output_dir = Path(config.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -512,9 +516,6 @@ def run_extraction(
             with open(metadata_path, "w") as f:
                 json.dump(all_metadata, f, indent=2)
             logger.info(f"Metadata saved to {metadata_path}")
-
-
-
             summary_path = output_dir / "processing_summary.txt"
             with open(summary_path, "w") as f:
                 f.write(f"Processing Summary for {model_type.value}\n")

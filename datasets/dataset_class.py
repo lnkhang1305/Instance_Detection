@@ -130,7 +130,7 @@ class SceneDataset(torch.utils.data.Dataset):
                 'data_dir': self.data_dir,
                 'id': id_,
                 'mode': mode,
-                'type': type,
+                'type': type_,
                 'image_path': image_dir
             }
             print(f"[DEBUG] Added image info for {image_dir}")
