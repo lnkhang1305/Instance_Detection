@@ -25,7 +25,6 @@ from datetime import datetime
 import time
 from torchvision import transforms
 from enum import Enum
-import matplotlib.pyplot as plt
 from torchvision.utils import save_image
 import os
 
@@ -123,42 +122,42 @@ def load_config(config_path:str) -> Config:
     return config
 
 def setup_logging(output_dir: str, rank: Optional[int] = None) -> Tuple[logging.Logger, Path]:
-  """
-  Setup logging configuration with both file and console handlers.
+    """
+    Setup logging configuration with both file and console handlers.
 
-  Args:
-      output_dir (str): Directory for log files.
-      rank (Optional[int]): Process rank for distributed training.
+    Args:
+        output_dir (str): Directory for log files.
+        rank (Optional[int]): Process rank for distributed training.
 
-  Returns:
-      Tuple[logging.Logger, Path]: Configured logger and path to the log file.
-  """
-  timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-  log_dir = Path(output_dir) / "logs"
-  log_dir.mkdir(parents=True, exist_ok=True)
-  
-  rank_suffix = f"_rank{rank}" if rank is not None else ""
-  log_file = log_dir / f"process_log_{timestamp}{rank_suffix}.txt"
-  
-  logger = logging.getLogger(f"Rank{rank}" if rank is not None else "Main")
-  logger.setLevel(logging.INFO)
-  
-  if not logger.handlers:
-      file_handler = logging.FileHandler(log_file)
-      file_handler.setLevel(logging.INFO)
-      file_formatter = logging.Formatter(
-          '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-      )
-      file_handler.setFormatter(file_formatter)
-      
-      console_handler = logging.StreamHandler()
-      console_handler.setLevel(logging.INFO)
-      console_formatter = logging.Formatter('%(levelname)s: %(message)s')
-      console_handler.setFormatter(console_formatter)
-      logger.addHandler(file_handler)
-      logger.addHandler(console_handler)
-  
-  return logger, log_file
+    Returns:
+        Tuple[logging.Logger, Path]: Configured logger and path to the log file.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = Path(output_dir) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    rank_suffix = f"_rank{rank}" if rank is not None else ""
+    log_file = log_dir / f"process_log_{timestamp}{rank_suffix}.txt"
+    
+    logger = logging.getLogger(f"Rank{rank}" if rank is not None else "Main")
+    logger.setLevel(logging.INFO)
+    
+    if not logger.handlers:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+        )
+        file_handler.setFormatter(file_formatter)
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+    
+    return logger, log_file
 
 def setup_distributed(rank:int, world_size:int, logger:logging.Logger, timeout:int=3600) -> None:
     """Initialize distributed training

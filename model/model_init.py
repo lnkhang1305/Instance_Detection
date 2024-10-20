@@ -13,10 +13,10 @@ import sys
 sys.path.append('.')
 import numpy as np
 
-# from GroundingDINO.groundingdino.models import build_model
-# from GroundingDINO.groundingdino.util.box_ops import box_cxcywh_to_xyxy
-# from GroundingDINO.groundingdino.util.slconfig import SLConfig
-# from GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
+from GroundingDINO.groundingdino.models import build_model
+from GroundingDINO.groundingdino.util.box_ops import box_cxcywh_to_xyxy
+from GroundingDINO.groundingdino.util.slconfig import SLConfig
+from GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
 # from sam2_repo.sam2.build_sam import build_sam2
 # from sam2_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
@@ -88,127 +88,158 @@ class CLIPModel(FeatExtractInterace):
         return features
 
 
-# class GroundingDino:
-#     def __init__(
-#         self,
-#         model_checkpoint_path: str,
-#         model_config_path='../GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py',
-#         device: str = 'cuda'
-#     ):
-#         print(f"[GroundingDino] Initializing with config: {model_config_path}")
-#         print(f"[GroundingDino] Checkpoint path: {model_checkpoint_path}")
-#         self.model = self._load_model_from_config(
-#             config_file=model_config_path,
-#             checkpoint_path=model_checkpoint_path,
-#             cpu_only=False,
-#             device=device
-#         )
-#         print("[GroundingDino] Initialization complete")
+class GroundingDinoClass:
+    def __init__(
+        self,
+        model_checkpoint_path: str,
+        model_config_path='../GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py',
+        device: str = 'cuda'
+    ):
+        print(f"[GroundingDino] Initializing with config: {model_config_path}")
+        print(f"[GroundingDino] Checkpoint path: {model_checkpoint_path}")
+        self.device = device
+        self.model = self._load_model_from_config(
+            config_file=model_config_path,
+            checkpoint_path=model_checkpoint_path,
+            cpu_only=False,
+            device=device
+        )
+        print("[GroundingDino] Initialization complete")
 
-#     def _load_model_from_config(
-#         self,
-#         config_file: str,
-#         checkpoint_path: str,
-#         cpu_only: bool = False,
-#         device: Optional[str] = None
-#     ) -> torch.nn.Module:
-#         print(f"[GroundingDino] Loading model from config: {config_file}")
-#         args = SLConfig.fromfile(config_file)
-#         args.device = "cpu" if cpu_only else ("cuda" if torch.cuda.is_available() else "cpu")
-#         print(f"[GroundingDino] Using device: {args.device}")
+    def _load_model_from_config(
+        self,
+        config_file: str,
+        checkpoint_path: str,
+        cpu_only: bool = False,
+        device: Optional[str] = None
+    ) -> torch.nn.Module:
+        print(f"[GroundingDino] Loading model from config: {config_file}")
+        args = SLConfig.fromfile(config_file)
+        args.device = device if device else ("cpu" if cpu_only else ("cuda" if torch.cuda.is_available() else "cpu"))
+        print(f"[GroundingDino] Using device: {args.device}")
+        model = build_model(args)
+        print("[GroundingDino] Model built successfully")
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+        print("[GroundingDino] Checkpoint loaded")
+        model.load_state_dict(clean_state_dict(checkpoint['model']), strict=False)
+        model.eval()
+        print("[GroundingDino] Model loaded and set to evaluation mode")
+        return model
+
+    def predict(
+        self,
+        images: torch.Tensor,
+        captions: List[str],
+        box_threshold: float,
+        text_threshold: float,
+        nms_threshold:float,
+        device: str = "cuda"
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]]]:
+        """
+        Run inference on a batch of images.
+
+        Args:
+            images (torch.Tensor): Batch of images (B, C, H, W).
+            captions (List[str]): List of captions for each image.
+            box_threshold (float): Threshold for box scores.
+            text_threshold (float): Threshold for text scores.
+            nms_threshold (float): IoU threshold for Non-Maximum Suppression (NMS).
+            device (str): Device to run the model on ('cuda' or 'cpu').
+
+        Returns:
+            Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]]]:
+                - List of tensors containing bounding boxes for each image.
+                - List of tensors containing confidence scores for each image.
+                - List of lists containing predicted phrases for each image.
+        """
+        print(f"[GroundingDino] Processing batch of {len(captions)} images")
+        print(f"[GroundingDino] Input image tensor shape: {images.shape}")
+        print(f"[GroundingDino] Box threshold: {box_threshold}, Text threshold: {text_threshold}")
         
-#         model = build_model(args)
-#         print("[GroundingDino] Model built successfully")
+        captions = [cap.lower().strip() + "." if not cap.endswith(".") else cap.lower().strip() for cap in captions]
+        print(f"[GroundingDino] Processed captions: {captions}")
+
+        self.model = self.model.to(device)
+        images = images.to(device)
+        print(f"[GroundingDino] Models and images moved to {device}")
+
+        with torch.no_grad():
+            outputs = self.model(images, captions=captions)
+
+        logits = outputs["pred_logits"].cpu().sigmoid()
+        boxes = outputs["pred_boxes"].cpu()
+        print(f"[GroundingDino] Raw output shapes - Logits: {logits.shape}, Boxes: {boxes.shape}")
+
+        all_boxes: List[torch.Tensor] = []
+        all_scores: List[torch.Tensor] = []
+        all_phrases: List[List[str]] = []
+
+        for i in range(images.size(0)):
+            print(f"\n[GroundingDino] Processing image {i+1}/{images.size(0)}")
+            logits_i = logits[i]
+            boxes_i = boxes[i]
+            
+            mask = logits_i.max(dim=1)[0] > box_threshold
+            logits_i = logits_i[mask]
+            boxes_i = boxes_i[mask]
+            
+            
+            
+            if logits_i.shape[0] == 0:
+                print("[GroundingDino] No boxes found above threshold")
+                all_boxes.append(torch.empty((0, 4)))
+                all_scores.append(torch.empty((0,)))
+                all_phrases.append([])
+                continue
+
+            tokenizer = self.model.tokenizer
+            tokenized = tokenizer(captions[i])
+            phrases_i = [
+                get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer).replace('.', '')
+                for logit in logits_i
+            ]
+            scores_i = logits_i.max(dim=1)[0]
+            boxes_xyxy = box_cxcywh_to_xyxy(boxes_i)
+            
+            print(f"[GroundingDino] Before NMS - Boxes: {len(boxes_xyxy)}, Phrases: {len(phrases_i)}")
+            boxes_i, scores_i, phrases_i = self.apply_nms(boxes_xyxy, scores_i, phrases_i, nms_threshold)
+            print(f"[GroundingDino] After NMS - Boxes: {len(boxes_i)}, Phrases: {len(phrases_i)}")
+            
+            all_boxes.append(boxes_i)
+            all_scores.append(scores_i)
+            all_phrases.append(phrases_i)
+
+        print("[GroundingDino] Prediction complete")
+        return all_boxes, all_scores, all_phrases
+
+    @staticmethod
+    def apply_nms(
+        boxes: torch.Tensor,
+        scores: torch.Tensor,
+        phrases: List[str],
+        iou_threshold: float = 0.5    
+    ) -> Tuple[torch.Tensor, torch.Tensor, List[str]]:
+        """
+        Apply Non-Maximum Suppression (NMS) to filter overlapping boxes.
+
+        Args:
+            boxes (torch.Tensor): Bounding boxes (N, 4).
+            scores (torch.Tensor): Confidence scores for each box (N,).
+            phrases (List[str]): Corresponding phrases for each box.
+            iou_threshold (float): IoU threshold for NMS.
+
+        Returns:
+            Tuple containing filtered boxes, scores, and phrases:
+                - boxes (torch.Tensor): Filtered bounding boxes.
+                - scores (torch.Tensor): Filtered confidence scores.
+                - phrases (List[str]): Filtered phrases.
+        """
+        print(f"[GroundingDino] Applying NMS with IoU threshold: {iou_threshold}")
+        print(f"[GroundingDino] Before NMS - Boxes: {boxes.size(0)}")
         
-#         checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
-#         print("[GroundingDino] Checkpoint loaded")
-        
-#         model.load_state_dict(clean_state_dict(checkpoint['model']), strict=False)
-#         model.eval()
-#         print("[GroundingDino] Model loaded and set to evaluation mode")
-#         return model
-
-#     def predict(
-#         self,
-#         images: torch.Tensor,
-#         captions: List[str],
-#         box_threshold: float,
-#         text_threshold: float,
-#         device: str = "cuda"
-#     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[List[str]]]:
-#         print(f"[GroundingDino] Processing batch of {len(captions)} images")
-#         print(f"[GroundingDino] Input image tensor shape: {images.shape}")
-#         print(f"[GroundingDino] Box threshold: {box_threshold}, Text threshold: {text_threshold}")
-        
-#         captions = [cap.lower().strip() + "." if not cap.endswith(".") else cap.lower().strip() for cap in captions]
-#         print(f"[GroundingDino] Processed captions: {captions}")
-
-#         self.model = self.model.to(device)
-#         images = images.to(device)
-#         print(f"[GroundingDino] Models and images moved to {device}")
-
-#         with torch.no_grad():
-#             outputs = self.model(images, captions=captions)
-
-#         logits = outputs["pred_logits"].cpu().sigmoid()
-#         boxes = outputs["pred_boxes"].cpu()
-#         print(f"[GroundingDino] Raw output shapes - Logits: {logits.shape}, Boxes: {boxes.shape}")
-
-#         all_boxes = []
-#         all_scores = []
-#         all_phrases = []
-
-#         for i in range(images.size(0)):
-#             print(f"\n[GroundingDino] Processing image {i+1}/{images.size(0)}")
-#             logits_i = logits[i]
-#             boxes_i = boxes[i]
-            
-#             mask = logits_i.max(dim=1)[0] > box_threshold
-#             logits_i = logits_i[mask]
-#             boxes_i = boxes_i[mask]
-            
-#             print(f"[GroundingDino] After threshold - Boxes shape: {boxes_i.shape}")
-            
-#             if logits_i.shape[0] == 0:
-#                 print("[GroundingDino] No boxes found above threshold")
-#                 all_boxes.append(torch.empty((0, 4)))
-#                 all_scores.append(torch.empty((0,)))
-#                 all_phrases.append([])
-#                 continue
-
-#             tokenizer = self.model.tokenizer
-#             tokenized = tokenizer(captions[i])
-#             phrases_i = [
-#                 get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer).replace('.', '')
-#                 for logit in logits_i
-#             ]
-#             scores_i = logits_i.max(dim=1)[0]
-#             boxes_xyxy = box_cxcywh_to_xyxy(boxes_i)
-            
-#             print(f"[GroundingDino] Before NMS - Boxes: {len(boxes_xyxy)}, Phrases: {len(phrases_i)}")
-#             boxes_i, scores_i, phrases_i = self.apply_nms(boxes_xyxy, scores_i, phrases_i, NMS_THRESHOLD)
-#             print(f"[GroundingDino] After NMS - Boxes: {len(boxes_i)}, Phrases: {len(phrases_i)}")
-            
-#             all_boxes.append(boxes_i)
-#             all_scores.append(scores_i)
-#             all_phrases.append(phrases_i)
-
-#         print("[GroundingDino] Prediction complete")
-#         return all_boxes, all_scores, all_phrases
-
-#     @staticmethod
-#     def apply_nms(
-#         boxes: torch.Tensor,
-#         scores: torch.Tensor,
-#         phrases: List[str],
-#         iou_threshold: float = 0.5    
-#     ) -> Tuple[torch.Tensor, torch.Tensor, List[str]]:
-#         print(f"[GroundingDino] Applying NMS with IoU threshold: {iou_threshold}")
-#         print(f"[GroundingDino] Before NMS - Boxes: {boxes.size(0)}")
-        
-#         keep_indices = torchvision.ops.nms(boxes, scores, iou_threshold)
-#         print(f"[GroundingDino] After NMS - Kept boxes: {len(keep_indices)}")
-#         return boxes[keep_indices], scores[keep_indices], [phrases[i] for i in keep_indices]
+        keep_indices = torchvision.ops.nms(boxes, scores, iou_threshold)
+        print(f"[GroundingDino] After NMS - Kept boxes: {len(keep_indices)}")
+        return boxes[keep_indices], scores[keep_indices], [phrases[i] for i in keep_indices]
 
 
 # class SegmentModel:
