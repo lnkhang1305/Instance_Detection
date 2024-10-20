@@ -123,11 +123,11 @@ class SceneDataset(torch.utils.data.Dataset):
             mode, type_, img_name, extension = filename.split('.')
             image_name = img_name + '.' + extension
             
-            if not is_intable(type_.split('_')[-1]):
-                if ((type_ == "leisure_zone" or type_=='meeting_room') and mode == 'easy') or ((type_ == "office" or type_=='pantry_room') and mode == 'hard'):
-                    type_ = type_ + '_001'
-                else:
-                    type_ = type_ + '_002'
+            if type_ != 'sink' and not is_intable(type_.split('_')[-1]):
+                    if ((type_ == "leisure_zone" or type_=='meeting_room') and mode == 'easy') or ((type_ == "office" or type_=='pantry_room') and mode == 'hard'):
+                        type_ = type_ + '_001'
+                    else:
+                        type_ = type_ + '_002'
 
             image_dir = os.path.join(self.data_dir, mode, type_, image_name)
 

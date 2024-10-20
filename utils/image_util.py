@@ -25,7 +25,6 @@ def plot_boxes_to_image(image_pil: Image.Image, boxes: torch.Tensor, phrases: Li
         font = ImageFont.truetype("/kaggle/input/fontttt/Arial.ttf", size=20)
     except IOError:
         font = ImageFont.load_default()
-    print(phrases)
     for box, phrase in zip(boxes, phrases):
         box = box.cpu().detach().numpy()
         x0, y0, x1, y1 = box.tolist()
