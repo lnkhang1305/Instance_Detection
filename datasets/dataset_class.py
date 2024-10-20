@@ -114,7 +114,7 @@ class SceneDataset(torch.utils.data.Dataset):
         self.cfg_info = sorted(self.cfg_info, key=lambda x: int(x['id']))
 
         for cfg in self.cfg_info:
-            print(cfg)
+           
             filename = cfg['file_name']
             id_ = cfg['id']
             mode, type_, img_name, extension = filename.split('.')
@@ -143,15 +143,12 @@ class SceneDataset(torch.utils.data.Dataset):
         return len(self.image_info)
 
     def __getitem__(self, idx) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        print(f"[DEBUG] Fetching item at index {idx}")
         image_cfg = self.image_info[idx]
         image_path = image_cfg['image_path']
         image = Image.open(image_path).convert('RGB')
-        print(f"[DEBUG] Opened image: {image_path}")
 
         if self.transform is not None:
-            image = self.transform(image)
-            print("[DEBUG] Applied transforms to image")
+            image = self.transform(image, None)
         
         return image, image_cfg
     
