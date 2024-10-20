@@ -157,11 +157,9 @@ class GroundingDinoClass:
         print(f"[GroundingDino] Box threshold: {box_threshold}, Text threshold: {text_threshold}")
         
         captions = [cap.lower().strip() + "." if not cap.endswith(".") else cap.lower().strip() for cap in captions]
-        print(f"[GroundingDino] Processed captions: {captions}")
 
         self.model = self.model.to(device)
         images = images.to(device)
-        print(f"[GroundingDino] Models and images moved to {device}")
 
         with torch.no_grad():
             outputs = self.model(images, captions=captions)

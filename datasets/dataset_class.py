@@ -8,8 +8,6 @@ from PIL import Image
 import os
 import logging
 
-
-
 class ImageProcessor:
     """Handles image preprocessing and augmentation"""
     @staticmethod
@@ -143,7 +141,6 @@ class SceneDataset(torch.utils.data.Dataset):
             }
             
             list_image_info.append(new_cfg)
-            print(new_cfg['image_path'])
         print(f"[DEBUG] Total images loaded: {len(list_image_info)}")
         return list_image_info
 
@@ -156,9 +153,6 @@ class SceneDataset(torch.utils.data.Dataset):
         image = Image.open(image_path).convert('RGB')
 
         if self.transform is not None:
-            image = self.transform(image, None)
+            image,_ = self.transform(image, None)
         
         return image, image_cfg
-    
-
-
