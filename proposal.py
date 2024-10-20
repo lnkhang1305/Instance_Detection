@@ -240,11 +240,7 @@ def main_worker(rank: int, world_size: int, config: Config) -> None:
             scores = phrases_list[idx]
 
             if len(boxes) > 0:
-                annotated_image = plot_boxes_to_image(original_image.copy(), {
-                  "size": original_image.size,
-                  "boxes": boxes,
-                  "labels": phrases,
-                })
+                annotated_image = plot_boxes_to_image(original_image.copy(), boxes, phrases)
             else:
                 annotated_image = original_image
             
