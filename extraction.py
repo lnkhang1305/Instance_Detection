@@ -490,6 +490,16 @@ def run_extraction(
             all_features = np.vstack(all_features)
 
         if rank == 0:
+            first_class_metadata = all_metadata[:24]
+            class_ids = [meta['id'] for meta in first_class_metadata]
+            print(f"First class IDs: {class_ids}") 
+            
+
+            for i in range(0, len(all_metadata), 24):
+                batch_meta = all_metadata[i:i+24]
+                batch_ids = [meta['id'] for meta in batch_meta]
+                logger.info(f"Class {i//24 + 1} IDs: {min(batch_ids)}-{max(batch_ids)}")
+
             output_dir = Path(config.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
