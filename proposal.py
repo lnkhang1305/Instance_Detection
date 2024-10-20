@@ -7,7 +7,7 @@ from datetime import timedelta
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-import datetime
+from datetime import datetime
 import torch.distributed
 from torchvision import transforms
 from datasets import SceneDataset
@@ -27,7 +27,7 @@ class Config:
     config_file: str
     checkpoint_path: str
     data_dir: str
-    cfg_file: str 
+    data_config_file: str
     text_prompt: str
     output_dir: str
     box_threshold: float
@@ -139,7 +139,7 @@ def load_config(config_path: str) -> Config:
         config_file=config_dict.get('config_file'),
         checkpoint_path=config_dict.get('checkpoint_path'),
         data_dir=config_dict.get('data_dir'),
-        cfg_file_path=config_dict.get('cfg_file_path'),
+        data_config_file= config_dict.get('data_config_file'),
         text_prompt=config_dict.get('text_prompt'),
         output_dir=config_dict.get('output_dir'),
         box_threshold=config_dict.get('box_threshold'),
@@ -147,8 +147,6 @@ def load_config(config_path: str) -> Config:
         cpu_only=config_dict.get('cpu_only', False),
         batch_size=config_dict.get('batch_size', 4),
         num_workers=config_dict.get('num_workers', 2),
-        master_addr=config_dict.get('master_addr', 'localhost'),
-        master_port=config_dict.get('master_port', '12355'),
         nms_threshold=config_dict.get('nms_threshold', 0.5),
         world_size=config_dict.get('world_size', torch.cuda.device_count())
     )
@@ -189,7 +187,7 @@ def main_worker(rank: int, world_size: int, config: Config) -> None:
         ]
     )
 
-    dataset = SceneDataset(data_dir=config.data_dir, cfg_file_path=config.config_file, transform=transformer)
+    dataset = SceneDataset(data_dir=config.data_dir, cfg_file_path=config.data_config_file, transform=transformer)
     sampler = DistributedSampler(dataset=dataset, shuffle=False)
 
     dataloader = DataLoader(
@@ -293,10 +291,3 @@ def main():
     )
 if __name__ == "__main__":
     main()
-
-        
-    
-
-    
-
-

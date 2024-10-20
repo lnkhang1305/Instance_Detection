@@ -134,7 +134,7 @@ class SceneDataset(torch.utils.data.Dataset):
                 'type': type_,
                 'image_path': image_dir
             }
-            print(f"[DEBUG] Added image info for {image_dir}")
+            
             list_image_info.append(new_cfg)
         print(f"[DEBUG] Total images loaded: {len(list_image_info)}")
         return list_image_info
