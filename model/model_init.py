@@ -17,8 +17,8 @@ from GroundingDINO.groundingdino.models import build_model
 from GroundingDINO.groundingdino.util.box_ops import box_cxcywh_to_xyxy
 from GroundingDINO.groundingdino.util.slconfig import SLConfig
 from GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
-# from sam2_repo.sam2.build_sam import build_sam2
-# from sam2_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+from sam2_repo.sam2.build_sam import build_sam2
+from sam2_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 import open_clip
 from transformers import AutoImageProcessor, AutoModel
@@ -239,37 +239,37 @@ class GroundingDinoClass:
         return boxes[keep_indices], scores[keep_indices], [phrases[i] for i in keep_indices]
 
 
-# class SegmentModel:
-#     def __init__(
-#         self,
-#         checkpoint: str,
-#         model_cfg: str
-#     ):
-#         print(f"[SegmentModel] Initializing with config: {model_cfg}")
-#         print(f"[SegmentModel] Checkpoint path: {checkpoint}")
+class SegmentModel:
+    def __init__(
+        self,
+        checkpoint: str,
+        model_cfg: str
+    ):
+        print(f"[SegmentModel] Initializing with config: {model_cfg}")
+        print(f"[SegmentModel] Checkpoint path: {checkpoint}")
         
-#         self.model = build_sam2(
-#             model_cfg,
-#             checkpoint,
-#             torch.device('cuda'),
-#             apply_postprocessing=False
-#         )
-#         print("[SegmentModel] Model built successfully")
+        self.model = build_sam2(
+            model_cfg,
+            checkpoint,
+            torch.device('cuda'),
+            apply_postprocessing=False
+        )
+        print("[SegmentModel] Model built successfully")
         
-#         self.model.to(torch.device('cuda'))
-#         print("[SegmentModel] Model moved to cuda")
+        self.model.to(torch.device('cuda'))
+        print("[SegmentModel] Model moved to cuda")
         
-#         self.mask_generator = SAM2AutomaticMaskGenerator(self.model)
-#         print("[SegmentModel] Mask generator initialized")
+        self.mask_generator = SAM2AutomaticMaskGenerator(self.model)
+        print("[SegmentModel] Mask generator initialized")
 
-#     @torch.no_grad()
-#     def predict(self, image: np.ndarray) -> List[Dict[str, Any]]:
-#         print(f"[SegmentModel] Processing image with shape: {image.shape}")
-#         masks = self.mask_generator.generate(image)
-#         print(f"[SegmentModel] Generated {len(masks)} masks")
-#         for i, mask in enumerate(masks):
-#             print(f"[SegmentModel] Mask {i+1} - Area: {mask['area']}, "
-#                   f"BBox: {mask['bbox']}, "
-#                   f"Predicted IoU: {mask['predicted_iou']:.3f}, "
-#                   f"Stability Score: {mask['stability_score']:.3f}")
-#         return masks
+    @torch.no_grad()
+    def predict(self, image: np.ndarray) -> List[Dict[str, Any]]:
+        print(f"[SegmentModel] Processing image with shape: {image.shape}")
+        masks = self.mask_generator.generate(image)
+        print(f"[SegmentModel] Generated {len(masks)} masks")
+        for i, mask in enumerate(masks):
+            print(f"[SegmentModel] Mask {i+1} - Area: {mask['area']}, "
+                  f"BBox: {mask['bbox']}, "
+                  f"Predicted IoU: {mask['predicted_iou']:.3f}, "
+                  f"Stability Score: {mask['stability_score']:.3f}")
+        return masks

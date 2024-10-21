@@ -233,6 +233,7 @@ def main_worker(rank: int, world_size: int, config: Config) -> None:
             image_folder_belong = os.path.basename(os.path.dirname(image_path))
             image_name = f"{image_folder_belong}_{image_name}"
             original_image = Image.open(image_path).convert('RGB')
+            W, H = original_image.size
 
 
             boxes = boxes_list[idx]
@@ -248,7 +249,7 @@ def main_worker(rank: int, world_size: int, config: Config) -> None:
             annotated_image.save(annotated_image_path)
 
             annotation = metadata.copy()
-            annotation["bounding_boxes"] = boxes.tolist()
+            annotation["bounding_boxes"] = (boxes * torch.tensor([W, H, W, H])).tolist()
             annotation["scores"] = scores.tolist()
             annotation["phrases"] = phrases
             annotation["annotated_image_path"] = annotated_image_path
