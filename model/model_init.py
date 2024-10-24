@@ -76,6 +76,7 @@ class CLIPModel(FeatExtractInterace):
             else:
                 raise TypeError(f"[CLIP] Unsupported image type: {type(image)}")
         
+        
         stacked_images = torch.stack(processed_images)
         print(f"[CLIP] Input tensor shape: {stacked_images.shape}")
         
@@ -259,7 +260,7 @@ class SegmentModel:
         self.model.to(torch.device('cuda'))
         print("[SegmentModel] Model moved to cuda")
         
-        self.mask_generator = SAM2AutomaticMaskGenerator(self.model)
+        self.mask_generator = SAM2AutomaticMaskGenerator(self.model,points_per_batch=12) #####IMPORTANY
         print("[SegmentModel] Mask generator initialized")
 
     @torch.no_grad()
@@ -271,5 +272,6 @@ class SegmentModel:
             print(f"[SegmentModel] Mask {i+1} - Area: {mask['area']}, "
                   f"BBox: {mask['bbox']}, "
                   f"Predicted IoU: {mask['predicted_iou']:.3f}, "
-                  f"Stability Score: {mask['stability_score']:.3f}")
+                  f"Stability Score: {mask['stability_score']:.3f}",
+                  f"Mask segmentation shape:{mask['segmentation'].shape}")
         return masks

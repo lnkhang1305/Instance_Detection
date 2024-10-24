@@ -28,10 +28,7 @@ from enum import Enum
 from torchvision.utils import save_image
 import os
 
-import matplotlib.pyplot as plt
-class ModelType(Enum):
-    CLIP = "CLIP"
-    DINOV2 = "DINOV2"
+
 
 @dataclass
 class ModelConfig:
@@ -42,7 +39,7 @@ class ModelConfig:
 
 class ModelFactory:
     @staticmethod
-    def create_model(model_type: ModelType, config: ModelConfig) -> FeatExtractInterace:
+    def create_model(model_type: str, config: ModelConfig) -> FeatExtractInterace:
         """Create a single model instance based on the specified type.
 
         Args:
@@ -52,11 +49,12 @@ class ModelFactory:
         Returns:
             FeatExtractInterace: Initialized model instance
         """
-        if model_type == ModelType.CLIP:
+        
+        if model_type == "CLIP":
             return CLIPModel(
                 model_name=config.name
             )
-        elif model_type == ModelType.DINOV2:
+        elif model_type == "DINOV2":
             return DinoV2Model(
                 model_name=config.name
             )
@@ -204,7 +202,7 @@ class FeatureExtractor:
 
     def __init__(
         self,
-        model_type: ModelType,
+        model_type: str,
         model_config: ModelConfig,
         rank: int,
         config: Config,
@@ -300,7 +298,7 @@ class FeatureExtractor:
         masked_images = images * binary_masks
         
         self.save_sample_images(images, masked_images)
-        self.logger.info(f"Starting {self.model_type.value} feature extraction")
+        self.logger.info(f"Starting {self.model_type} feature extraction")
         features = self.base_model.extract_features(masked_images)      
         features_numpy = features.cpu().detach().numpy()
         self.logger.info(f"Extracted features with shape {features_numpy.shape}")
@@ -355,7 +353,7 @@ def process_batch(
 # =======================
 
 def run_extraction(
-    rank:int, config: Config, model_type: ModelType
+    rank:int, config: Config, model_type: str
 ) -> None:
     """Main extraction process for each GPU/process.
 
@@ -374,7 +372,7 @@ def run_extraction(
         device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {device}")
         logger.info("Initializing CLIP and DinoV2 model...")
-        model_config = config.models[model_type.value]
+        model_config = config.models[model_type]
         extractor = FeatureExtractor(
             model_type=model_type,
             model_config=model_config,
@@ -504,7 +502,7 @@ def run_extraction(
             output_dir.mkdir(parents=True, exist_ok=True)
 
             faiss_index.add(all_features)
-            index_path = output_dir / f"feature_index_{model_type.value.lower()}.index"
+            index_path = output_dir / f"feature_index_{model_type.lower()}.index"
             faiss_index.save(str(index_path))
             logger.info(f"Faiss index saved to {index_path}")
             
@@ -515,13 +513,13 @@ def run_extraction(
             logger.info(f"Metadata saved to {metadata_path}")
             summary_path = output_dir / "processing_summary.txt"
             with open(summary_path, "w") as f:
-                f.write(f"Processing Summary for {model_type.value}\n")
+                f.write(f"Processing Summary for {model_type}\n")
                 f.write("================================\n\n")
                 f.write(f"Processing completed at: {datetime.now()}\n")
                 f.write(f"Total processing time: {(time.time() - loader_start_time):.2f} seconds\n")
                 f.write(f"Total features processed: {all_features.shape[0]}\n")
                 f.write(f"Number of images processed: {len(all_metadata)}\n")
-                f.write(f"Model type used: {model_type.value}\n")
+                f.write(f"Model type used: {model_type}\n")
                 f.write(f"Batch size used: {config.data.batch_size}\n")
                 f.write(f"Number of workers: {config.data.num_workers}\n")
                 f.write(f"Distributed processing: {config.distributed}\n")
@@ -562,7 +560,7 @@ def main():
     try:
         config = load_config(args.config)
         print(type(config.models['CLIP'].name))
-        model_type = ModelType.CLIP if config.models['CLIP'].name != "None" else ModelType.DINOV2
+        model_type = "CLIP" if config.models['CLIP'].name != "None" else "DINOV2"
         print(f"Using model: {model_type}")
         logger, _ = setup_logging(config.output_dir)
         logger.info("Starting main process")

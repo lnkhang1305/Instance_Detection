@@ -16,8 +16,8 @@ class FaissIndexStrategy:
     """
     def __init__(
         self,
-        index_type: str,
-        dimension: int,
+        index_type: str = None,
+        dimension: int = None,
         use_gpu: bool = False,
         device: int = 0,
         **kwargs
@@ -189,7 +189,7 @@ class FaissIndexStrategy:
             self._needs_training = True
 
         else:
-            raise ValueError(f"Unknown index type: {self.index_type}")
+            print(f"Unknown index type: {self.index_type}")
     
     
 
@@ -271,8 +271,7 @@ class FaissIndexStrategy:
     
     def load(self, filename: str) -> None:
         """
-        Load the index from a file.
-
+        Load the index from a file with GPU memory check and CPU fallback.
         Args:
             filename (str): Path to load the index from
         """
@@ -284,11 +283,56 @@ class FaissIndexStrategy:
             self.dimension = metadata['dimension']
             self._metric = metadata['metric']
             self.kwargs.update(metadata['kwargs'])
-        
+
         self.index = faiss.read_index(filename)
+
         if self.use_gpu:
-            self._gpu_resources = faiss.StandardGpuResources()
-            self.index = faiss.index_gpu_to_cpu(self._gpu_resources, self.device, self.index)
-        
+            try:
+                self._gpu_resources = faiss.StandardGpuResources()
+
+                import torch
+                if not torch.cuda.is_available():
+                    raise RuntimeError("CUDA not available")
+
+                # Calculate approximate memory requirements for the index
+                index_size = self.index.ntotal * self.dimension * 4  # 4 bytes per float
+                if self.index_type.startswith("ivf"):
+                    # Add overhead for IVF indices
+                    index_size = int(index_size * 1.2)  # 20% overhead estimation
+
+                gpu_mem_free = torch.cuda.get_device_properties(self.device).total_memory - torch.cuda.memory_allocated(self.device)
+
+                if index_size > gpu_mem_free * 0.8:
+                    raise RuntimeError(f"Insufficient GPU memory. Required: {index_size / 1e9:.2f} GB, "
+                                     f"Available: {gpu_mem_free / 1e9:.2f} GB")
+
+                # Move index to GPU based on type
+                if self.index_type == "flat_l2" or self.index_type == "flat_ip":
+                    self.index = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, self.index)
+                elif self.index_type == "ivfflat":
+                    config = faiss.GpuIndexIVFFlatConfig()
+                    config.device = self.device
+                    self.index = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, self.index)
+                elif self.index_type == "ivfpq":
+                    config = faiss.GpuIndexIVFPQConfig()
+                    config.device = self.device
+                    self.index = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, self.index)
+                elif self.index_type == "ivfsq":
+                    config = faiss.GpuIndexIVFScalarQuantizerConfig()
+                    config.device = self.device
+                    self.index = faiss.index_cpu_to_gpu(self._gpu_resources, self.device, self.index)
+                elif self.index_type == "hnsw":
+                    print("Warning: HNSW index does not support GPU. Using CPU instead.")
+                    self.use_gpu = False
+
+                print(f"Successfully loaded index to GPU device {self.device}")
+
+            except (RuntimeError, Exception) as e:
+                print(f"Failed to load index to GPU: {str(e)}")
+                print("Falling back to CPU index")
+                self.use_gpu = False
+                self._gpu_resources = None
+                if faiss.is_gpu_index(self.index):
+                    self.index = faiss.index_gpu_to_cpu(self.index)
+
         self._set_default_parameters()
-        
