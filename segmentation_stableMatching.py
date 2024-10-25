@@ -446,7 +446,7 @@ def plot_boxes_to_image(
 # ============================ DATASET ==============================
 class ImageDataset(Dataset):
     def __init__(self, image_configs: List[Dict[str,Any]], logger: logging.Logger):
-        self.image_configs = image_configs[:4]
+        self.image_configs = image_configs
         self.logger = logger
         self.logger.info(f"Finding {len(self.image_configs)} number of image(s)")
         self.transform = torchvision.transforms.Compose([
