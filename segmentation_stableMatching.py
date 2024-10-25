@@ -92,25 +92,25 @@ faiss_config: FaissConfig,
 logger: logging.Logger,
 initial_k: int = 100
 ) -> Tuple[np.ndarray, np.ndarray]:
-    logger.info(f"Starting optimized search and match with initial_k={initial_k}")
-    logger.info(f"Input features shape: {features_np.shape}")
+    # logger.info(f"Starting optimized search and match with initial_k={initial_k}")
+    # logger.info(f"Input features shape: {features_np.shape}")
 
     metric = faiss_config.metric.lower()
-    logger.info(f"Using metric: {metric}")
+    # logger.info(f"Using metric: {metric}")
 
     total_vectors = faiss_index_strategy.index.ntotal
-    logger.info(f"Total vectors in FAISS index: {total_vectors}")
+    # logger.info(f"Total vectors in FAISS index: {total_vectors}")
     if total_vectors == 0:
         logger.error("FAISS index is empty!")
         raise ValueError("FAISS index contains no vectors")
     
     try:
-        logger.info(f"Performing initial search with k={min(initial_k, total_vectors)}")
+        # logger.info(f"Performing initial search with k={min(initial_k, total_vectors)}")
         initial_distances, initial_indices = faiss_index_strategy.search(
             features_np, k=min(initial_k, total_vectors)
         )
-        logger.info(f"Initial distances shape: {initial_distances.shape}")
-        logger.info(f"Initial indices shape: {initial_indices.shape}")
+        # logger.info(f"Initial distances shape: {initial_distances.shape}")
+        # logger.info(f"Initial indices shape: {initial_indices.shape}")
         logger.debug(f"Distance range: [{initial_distances.min():.4f}, {initial_distances.max():.4f}]")
 
     except Exception as e:
@@ -122,13 +122,13 @@ initial_k: int = 100
         preference_mat = np.full(
             (features_np.shape[0], total_vectors), -np.inf
         )
-        logger.info(f"Preference matrix shape: {preference_mat.shape}")
+        # logger.info(f"Preference matrix shape: {preference_mat.shape}")
     except Exception as e:
         logger.error(f"Failed to create preference matrix: {str(e)}")
         raise
 
     # Fill preference matrix
-    logger.info("Filling preference matrix")
+    # logger.info("Filling preference matrix")
     for i in range(features_np.shape[0]):
         try:
             if metric == 'cosine':
@@ -145,11 +145,11 @@ initial_k: int = 100
             raise
     
 
-    logger.info("Applying initial stable matching")
+    # logger.info("Applying initial stable matching")
     try:
         engagement_mat = stable_matching(preference_mat, logger=logger)
-        logger.info(f"Initial engagement matrix shape: {engagement_mat.shape}")
-        logger.info(f"Initial engagement matrix sum: {engagement_mat.sum()}")
+        # logger.info(f"Initial engagement matrix shape: {engagement_mat.shape}")
+        # logger.info(f"Initial engagement matrix sum: {engagement_mat.sum()}")
     except Exception as e:
         logger.error(f"Stable matching failed: {str(e)}")
         raise 
@@ -191,8 +191,8 @@ initial_k: int = 100
         
 
     matched_rois = np.where(engagement_mat.sum(axis=1) > 0)[0]
-    logger.info(f"Final number of matched ROIs: {len(matched_rois)}")
-    logger.info(f"Final number of unmatched ROIs: {features_np.shape[0] - len(matched_rois)}")
+    # logger.info(f"Final number of matched ROIs: {len(matched_rois)}")
+    # logger.info(f"Final number of unmatched ROIs: {features_np.shape[0] - len(matched_rois)}")
     
     if len(matched_rois) == 0:
         logger.warning("No ROIs were matched in the final result!")
@@ -448,7 +448,7 @@ class ImageDataset(Dataset):
     def __init__(self, image_configs: List[Dict[str,Any]], logger: logging.Logger):
         self.image_configs = image_configs
         self.logger = logger
-        self.logger.info(f"Finding {len(self.image_configs)} number of image(s)")
+        # self.logger.info(f"Finding {len(self.image_configs)} number of image(s)")
         self.transform = torchvision.transforms.Compose([
 
             torchvision.transforms.ToTensor(),
@@ -525,7 +525,7 @@ class ROIMatching:
         """
         self.logger = logger
         self.device = device
-        self.logger.info("Initializing SAM2.1 SegmentModel")
+        # self.logger.info("Initializing SAM2.1 SegmentModel")
         if not os.path.exists(model_checkpoint):
             self.logger.error(f"Model checkpoint not found at: {model_checkpoint}")
             raise FileNotFoundError(f"Model checkpoint not found: {model_checkpoint}")
@@ -543,7 +543,7 @@ class ROIMatching:
             self.logger.error(f"Failed to initialize SAM2.1 model: {str(e)}")
             raise
 
-        self.logger.info("SAM2.1 Segment Model Initialized sucessfully")
+        # self.logger.info("SAM2.1 Segment Model Initialized sucessfully")
     
     def masks_to_roi_images(
         self,
@@ -560,8 +560,8 @@ class ROIMatching:
         Returns:
             List[Image.Image]: List of ROI Images
         """
-        self.logger.info(f"Converting {len(masks)} masks to ROI images")
-        self.logger.info(f"Original image size: {original_image.size}")
+        # self.logger.info(f"Converting {len(masks)} masks to ROI images")
+        # self.logger.info(f"Original image size: {original_image.size}")
         roi_images = []
         roi_images_masks = []
         roi_bounding_boxes = []
@@ -601,7 +601,7 @@ class ROIMatching:
             except Exception as e:
                 self.logger.error(f"Error processing mask {idx}: {str(e)}")
                 continue
-        self.logger.info(f"Successfully converted {len(roi_images)} masks to ROI images")
+        # self.logger.info(f"Successfully converted {len(roi_images)} masks to ROI images")
         return roi_images, roi_images_masks, roi_bounding_boxes
 
     def _convert_images_to_tensor(self, images: List) -> torch.Tensor:
@@ -718,19 +718,19 @@ class ROIMatching:
                 self.logger.error(f"Error processing bbox {idx}: {e}")
                 continue
         
-        if not all_roi_masks:
-            self.logger.warning("No ROIs detected in any of the bounding boxes")
-        else:
-            self.logger.info(f"Total ROIs extracted: {len(all_roi_masks)}")
+        # if not all_roi_masks:
+        #     self.logger.warning("No ROIs detected in any of the bounding boxes")
+        # else:
+        #     self.logger.info(f"Total ROIs extracted: {len(all_roi_masks)}")
 
         # print("INDEXX: ", rois_idx_2_image)    
         if all_roi_images and all_roi_masks:
             all_roi_images_tensor = torch.cat(all_roi_images, dim=0)
             all_roi_masks_tensor = torch.cat(all_roi_masks, dim=0)
             all_roi_boxes_tensor = torch.cat(all_roi_boxes, dim=0)
-            print("All roi images tensor shape:", all_roi_images_tensor.shape)
-            print("All roi masks tensor shape: ", all_roi_masks_tensor.shape)
-            print("All roi boxes tensor shape: ", all_roi_boxes_tensor.shape)
+            # print("All roi images tensor shape:", all_roi_images_tensor.shape)
+            # print("All roi masks tensor shape: ", all_roi_masks_tensor.shape)
+            # print("All roi boxes tensor shape: ", all_roi_boxes_tensor.shape)
             return all_roi_images_tensor, all_roi_masks_tensor, all_roi_boxes_tensor, rois_idx_2_image
         else:
             return torch.empty(0), torch.empty(0), torch.empty(0), {}
@@ -876,9 +876,9 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         image_PIL = to_pil(image)
         bboxes = batch['bounding_boxes'][0]
         image_name =  os.path.basename(os.path.split(image_path)[0]) + os.path.basename(image_path)
-        logger.info(f"Processing image ID: {image_id} from path: {image_path}")
-        logger.info(f"Image shape: {image.size() if hasattr(image, 'size') else 'unknown'}")
-        logger.info(f"Number of bounding boxes: {len(bboxes)}")
+        # logger.info(f"Processing image ID: {image_id} from path: {image_path}")
+        # logger.info(f"Image shape: {image.size() if hasattr(image, 'size') else 'unknown'}")
+        # logger.info(f"Number of bounding boxes: {len(bboxes)}")
 
         try:
             logger.info(f"Extracting ROIs for image {image_id}")
@@ -888,7 +888,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 bounding_boxes=bboxes
             )
             roi_extraction_time = (datetime.now() - roi_extraction_start).total_seconds()
-            logger.info(f"ROI extraction completed in {roi_extraction_time:.2f} seconds. Found {len(roi_images)} ROIs")
+            # logger.info(f"ROI extraction completed in {roi_extraction_time:.2f} seconds. Found {len(roi_images)} ROIs")
             
             save_tensor_images(roi_images, roi_masks, '/kaggle/working/debug')
             if roi_images is None or len(roi_images) == 0:
@@ -896,26 +896,26 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 total_failed += 1
                 continue
                 
-            logger.info(f"Extracting features for {len(roi_images)} ROIs")
+            # logger.info(f"Extracting features for {len(roi_images)} ROIs")
             feature_extraction_start = datetime.now()
             feature_matrix = torch.from_numpy(feature_extractor.extract_features(roi_images, roi_masks))
             print("Feature matrix shape: ", feature_matrix.shape)          
             feature_extraction_time = (datetime.now() - feature_extraction_start).total_seconds()
-            logger.info(f"Feature extraction completed in {feature_extraction_time:.2f} seconds")
+            # logger.info(f"Feature extraction completed in {feature_extraction_time:.2f} seconds")
             if not isinstance(feature_matrix, torch.Tensor):
                 logger.error(f"Feature extraction returned non-tensor type {type(feature_extraction_start)} for image ID: {image_id}")
                 total_failed += 1
                 continue
             
             features_np = feature_matrix.cpu().detach().numpy()
-            logger.info(f"Feature shape: {features_np.shape}")
+            # logger.info(f"Feature shape: {features_np.shape}")
             
             if features_np.size == 0:
                 logger.warning(f"No features extracted for image ID: {image_id}")
                 total_failed += 1
                 continue
 
-            logger.info("Starting optimized search and match")
+            # logger.info("Starting optimized search and match")
             
             matching_start = datetime.now()
             engagement_matrix, _, preference_mat = optimized_search_and_match(
@@ -927,16 +927,16 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
             )
             
             matching_time = (datetime.now() - matching_start).total_seconds()
-            logger.info(f"Search and match completed in {matching_time:.2f} seconds")
+            # logger.info(f"Search and match completed in {matching_time:.2f} seconds")
 
-            logger.info("\n====Detail matching  =======\n")
+            # logger.info("\n====Detail matching  =======\n")
             roi_to_vec = {}
             for roi_idx in range(preference_mat.shape[0]):
                 match_indices = np.where(engagement_matrix[roi_idx] == 1)[0]
                 if len(match_indices) > 0:
                     roi_to_vec[roi_idx] = match_indices[0]
-            logger.info("\nROI to Vector Mapping:")
-            logger.info("Format: ROI_ID -> Matched_Vector_Index (Similarity_Score)")
+            # logger.info("\nROI to Vector Mapping:")
+            # logger.info("Format: ROI_ID -> Matched_Vector_Index (Similarity_Score)")
             
             sorted_rois = sorted(roi_to_vec.keys())
 
@@ -984,9 +984,9 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 classes_name.append(category_class)
 
             if boxes:
-                logger.info(f"Number of boxes before nms: {len(boxes)}")
+                # logger.info(f"Number of boxes before nms: {len(boxes)}")
                 keep_indices = perform_nms(boxes, scores, 0.5)
-                logger.info(f"Number of boxes after nms: {len(keep_indices)}")
+                # logger.info(f"Number of boxes after nms: {len(keep_indices)}")
                 kept_boxes = []
                 kept_classes = []
                 for idx in keep_indices:
@@ -1041,7 +1041,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                         cpu_result[k] = v
                 cpu_results.append(cpu_result)
             dist.all_gather_object(all_results,cpu_results)
-            logger.info(f"Successfully gathered results from all {world_size} processes")
+           
         except Exception as e:
             logger.error(f"Failed to gather results from all processes due to e: {e}")
             raise e
