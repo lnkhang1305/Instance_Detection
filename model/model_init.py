@@ -260,7 +260,7 @@ class SegmentModel:
         self.model.to(torch.device('cuda'))
         print("[SegmentModel] Model moved to cuda")
         
-        self.mask_generator = SAM2AutomaticMaskGenerator(self.model,points_per_batch=12) #####IMPORTANY
+        self.mask_generator = SAM2AutomaticMaskGenerator(self.model,points_per_batch=8) #####IMPORTANY
         print("[SegmentModel] Mask generator initialized")
 
     @torch.no_grad()
