@@ -21,6 +21,7 @@ import random
 import torch.multiprocessing as mp
 from PIL import Image, ImageDraw, ImageFont
 import torchvision
+from torchvision import transforms as T
 
 # ====================== ENUMS & DATACLASSES ======================
 
@@ -60,6 +61,7 @@ class Config:
     faiss: FaissConfig
     data: DataConfig
     output_dir: str
+    sam_threshold:int
     distributed:bool
     world_size:int 
     seed:int=42
@@ -93,13 +95,13 @@ initial_k: int = 100
         )
         logger.info(f"Initial distances shape: {initial_distances.shape}")
         logger.info(f"Initial indices shape: {initial_indices.shape}")
-        logger.info(f"Distance range: [{initial_distances.min():.4f}, {initial_distances.max():.4f}]")
+        logger.debug(f"Distance range: [{initial_distances.min():.4f}, {initial_distances.max():.4f}]")
 
     except Exception as e:
         logger.error(f"FAISS search failed: {str(e)}")
         raise e
     
-    logger.info("Preparing preference matrix")
+    logger.debug("Preparing preference matrix")
     try:
         preference_mat = np.full(
             (features_np.shape[0], total_vectors), -np.inf
@@ -121,14 +123,15 @@ initial_k: int = 100
                 logger.error(f"Unsupported metric: {metric}")
                 raise ValueError(f"Unsupported metric: {metric}")
             if i < 5:  
-                logger.info(f"Sample preference values for row {i}: {preference_mat[i, initial_indices[i]][:5]}")
+                logger.debug(f"Sample preference values for row {i}: {preference_mat[i, initial_indices[i]][:5]}")
         except Exception as e:
             logger.error(f"Error filling preference matrix at row {i}: {str(e)}")
             raise
     
+
     logger.info("Applying initial stable matching")
     try:
-        engagement_mat = stable_matching(preference_mat)
+        engagement_mat = stable_matching(preference_mat, logger=logger)
         logger.info(f"Initial engagement matrix shape: {engagement_mat.shape}")
         logger.info(f"Initial engagement matrix sum: {engagement_mat.sum()}")
     except Exception as e:
@@ -136,18 +139,18 @@ initial_k: int = 100
         raise 
 
     unmatched_rois = np.where(engagement_mat.sum(axis=1) == 0)[0]
-    logger.info(f"Number of unmatched ROIs: {len(unmatched_rois)}")
+    logger.debug(f"Number of unmatched ROIs: {len(unmatched_rois)}")
     if len(unmatched_rois) > 0:
-        logger.info(f"Unmatched ROI indices: {unmatched_rois}")
+        logger.debug(f"Unmatched ROI indices: {unmatched_rois}")
 
     if len(unmatched_rois) > 0:
-        logger.info(f"Performing full search for {len(unmatched_rois)} unmatched ROIs")
+        logger.debug(f"Performing full search for {len(unmatched_rois)} unmatched ROIs")
         try:
             full_distances, full_indices = faiss_index_strategy.search(
                 features_np[unmatched_rois], k=total_vectors
             )
-            logger.info(f"Full distances shape: {full_distances.shape}")
-            logger.info(f"Full indices shape: {full_indices.shape}")
+            logger.debug(f"Full distances shape: {full_distances.shape}")
+            logger.debug(f"Full indices shape: {full_indices.shape}")
         except Exception as e:
             logger.error(f"Full FAISS search failed: {str(e)}")
             raise
@@ -159,16 +162,17 @@ initial_k: int = 100
                 preference_mat[roi_idx] = 1 / (full_distances[i] + 1e-6)
             
             if i < 5:  
-                logger.info(f"Updated preference values for unmatched ROI {roi_idx}: {preference_mat[roi_idx][:5]}")
+                logger.debug(f"Updated preference values for unmatched ROI {roi_idx}: {preference_mat[roi_idx][:5]}")
 
-        logger.info("Applying final stable matching")
+        logger.debug("Applying final stable matching")
         try:
             engagement_mat = stable_matching(preference_mat)
-            logger.info(f"Final engagement matrix shape: {engagement_mat.shape}")
-            logger.info(f"Final engagement matrix sum: {engagement_mat.sum()}")
+            logger.debug(f"Final engagement matrix shape: {engagement_mat.shape}")
+            logger.debug(f"Final engagement matrix sum: {engagement_mat.sum()}")
         except Exception as e:
             logger.error(f"Final stable matching failed: {str(e)}")
             raise
+        
 
     matched_rois = np.where(engagement_mat.sum(axis=1) > 0)[0]
     logger.info(f"Final number of matched ROIs: {len(matched_rois)}")
@@ -177,7 +181,7 @@ initial_k: int = 100
     if len(matched_rois) == 0:
         logger.warning("No ROIs were matched in the final result!")
 
-    return engagement_mat, initial_indices
+    return engagement_mat, initial_indices, preference_mat
 
 
 def load_json(file_path: str) -> Any:
@@ -203,7 +207,7 @@ def load_config(config_path: str)  -> Config:
     )
     return config
 
-def stable_matching(preference_mat: np.ndarray):
+def stable_matching(preference_mat: np.ndarray, logger: logging.Logger):
     """Compute stable matching 
 
     Args:
@@ -212,33 +216,68 @@ def stable_matching(preference_mat: np.ndarray):
         np.ndarray: engagement matrix with matched pairs
 
     """
-    m, _ = preference_mat.shape
-    engagement_matrix  = np.zeros_like(preference_mat, dtype=int)
-    preferences = [
-        list(np.argsort(-preference_mat[i]) for i in range(m))
-    ]
+    m, n = preference_mat.shape
+    logger.debug(f"Input preference matrix shape: ({m}, {n})")
+    logger.debug("Initialized engagement matrix with zeros")
+    engagement_matrix = np.zeros_like(preference_mat, dtype=int)
+    logger.debug("Initialized engagement matrix with zeros")
+    logger.debug("Creating sorted preference lists for each ROI")
+    preferences = [list(np.argsort(-preference_mat[i])) for i in range(m)]
+    logger.debug(f"Sample preference list (ROI 0): {preferences[0][:5]}...")
+    
     free_rois = list(range(m))
+    logger.debug(f"Initialized {len(free_rois)} free ROIs")
+    
     current_matches = {}
+    logger.debug("Starting matching iterations")
 
+    iteration = 0
     while free_rois:
+        iteration += 1
+        if iteration % 1000 == 0:
+            logger.debug(f"Iteration {iteration}: {len(free_rois)} ROIs remaining to match")
+            
         roi = free_rois.pop(0)
+        logger.debug(f"Processing ROI {roi}")
+        
         if not preferences[roi]:
-            continue 
-        obj = preferences[roi].pop
+            logger.warning(f"ROI {roi} has exhausted all preferences")
+            continue
+            
+        obj = preferences[roi].pop(0)
+        logger.debug(f"ROI {roi} proposing to object {obj}")
+        
         if obj not in current_matches:
+            logger.debug(f"Object {obj} is free, matching with ROI {roi}")
             current_matches[obj] = roi
             engagement_matrix[roi, obj] = 1
         else:
             current_roi = current_matches[obj]
+            logger.debug(f"Object {obj} is currently matched to ROI {current_roi}")
+            
             if preference_mat[roi, obj] > preference_mat[current_roi, obj]:
+                logger.debug(f"New ROI {roi} preferred over current ROI {current_roi}")
                 engagement_matrix[current_roi, obj] = 0
                 current_matches[obj] = roi
                 engagement_matrix[roi, obj] = 1
                 free_rois.append(current_roi)
             else:
+                logger.debug(f"Current ROI {current_roi} preferred over new ROI {roi}")
                 free_rois.append(roi)
-        
+    print("Engagement matrix: ", engagement_matrix)
+    final_matches = np.sum(engagement_matrix)
+    logger.debug(f"Stable matching completed with {final_matches} total matches")
+    logger.debug(f"Matches per ROI: {np.sum(engagement_matrix, axis=1)[:5]}... (showing first 5)")
+    logger.debug(f"Matches per object: {np.sum(engagement_matrix, axis=0)[:5]}... (showing first 5)")
+    
+    unmatched_rois = np.where(np.sum(engagement_matrix, axis=1) == 0)[0]
+    if len(unmatched_rois) > 0:
+        logger.warning(f"Found {len(unmatched_rois)} unmatched ROIs")
+        if len(unmatched_rois) < 10:
+            logger.warning(f"Unmatched ROI indices: {unmatched_rois}")
+    
     return engagement_matrix
+        
 
 def setup_logging(output_dir: str, rank: Optional[int] = None) -> Tuple[logging.Logger, Path]:
     """
@@ -277,6 +316,41 @@ def setup_logging(output_dir: str, rank: Optional[int] = None) -> Tuple[logging.
         logger.addHandler(console_handler)
     return logger, log_file
 
+
+def save_tensor_images(images_tensor: torch.Tensor, 
+                      masks_tensor: torch.Tensor, 
+                      save_dir: str = "tensor_visualization"):
+    
+    from pathlib import Path
+    
+    base_dir = Path(save_dir)
+    image_dir = base_dir / "images"
+    mask_dir = base_dir / "masks"
+    
+    image_dir.mkdir(parents=True, exist_ok=True)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+    
+    images_tensor = images_tensor.cpu()
+    masks_tensor = masks_tensor.cpu()
+    
+    to_pil = T.ToPILImage()
+    
+    for idx in range(len(images_tensor)):
+        img = to_pil(images_tensor[idx])
+        img.save(image_dir / f"image_{idx:03d}.png")
+        
+        mask = masks_tensor[idx]
+        if mask.dim() > 2:
+            mask = mask.squeeze()
+        mask = mask.numpy()
+        mask = (mask*255).astype(np.uint8)
+        mask_img = Image.fromarray(mask, mode='L')
+        mask_img.save(mask_dir / f"mask_{idx:03d}.png")
+        
+        if idx % 10 == 0:
+            print(f"Saved {idx}/{len(images_tensor)} images")
+    
+    print(f"Saved {len(images_tensor)} images and masks to {save_dir}")
 
 def setup_distributed(rank:int, world_size:int, logger:logging.Logger, timeout:int=3600) -> None:
     """Initialize distributed training
@@ -355,7 +429,7 @@ def plot_boxes_to_image(
 # ============================ DATASET ==============================
 class ImageDataset(Dataset):
     def __init__(self, image_configs: List[Dict[str,Any]], logger: logging.Logger):
-        self.image_configs = image_configs[:1]
+        self.image_configs = image_configs[:4]
         self.logger = logger
         self.logger.info(f"Finding {len(self.image_configs)} number of image(s)")
         self.transform = torchvision.transforms.Compose([
@@ -472,58 +546,94 @@ class ROIMatching:
         self.logger.info(f"Converting {len(masks)} masks to ROI images")
         self.logger.info(f"Original image size: {original_image.size}")
         roi_images = []
+        roi_images_masks = []
+        roi_bounding_boxes = []
         
         for idx, mask in enumerate(masks):
             try:
                 bbox = mask['bbox']
                 x, y, width, height = map(int, bbox)
-                self.logger.info(f"Processing mask {idx} with bbox: x={x}, y={y}, w={width}, h={height}")
+                self.logger.debug(f"Processing mask {idx} with bbox: x={x}, y={y}, w={width}, h={height}")
                 if width <= 0 or height <= 0:
                     self.logger.warning(f"Invalid bbox dimensions for mask {idx}: width={width}, height={height}")
                     continue
-                
                 cropped_image = original_image.crop(
                     (x, y, x + width, y + height)
                 )
-                self.logger.info(f"Cropped image size for mask {idx}: {cropped_image.size}")
+                self.logger.debug(f"Cropped image size for mask {idx}: {cropped_image.size}")
                 full_mask = mask['segmentation'].astype(np.uint8)
                 print("FULL_MAKS segmentation shape:", full_mask.shape)
                 if full_mask.shape[0] < y + height or full_mask.shape[1] < x + width:
                     self.logger.error(f"Mask dimensions mismatch for mask {idx}")
                     continue
-                
-                
                 cropped_mask = full_mask[y:y+height, x:x+width]
-                mask_image = Image.fromarray(cropped_mask * 255).convert('L').resize(cropped_image.size)
                 cropped_image_np = np.array(cropped_image)
-                self.logger.info(f"Cropped image array shape: {cropped_image_np.shape}")
-                mask_np = np.array(mask_image) / 255.0
+                self.logger.debug(f"Cropped image array shape: {cropped_image_np.shape}")
 
                 if len(cropped_image_np.shape) == 2:
-                    self.logger.info("Converting grayscale image to RGB")
+                    self.logger.debug("Converting grayscale image to RGB")
                     cropped_image_np = np.stack([cropped_image_np]*3, axis=-1)
                 elif cropped_image_np.shape[2] == 4:
-                    self.logger.info("Converting RGBA image to RGB")
+                    self.logger.debug("Converting RGBA image to RGB")
                     cropped_image_np = cropped_image_np[:,:,:3]
-
-                masked_image_np = cropped_image_np * mask_np[:, :, np.newaxis]
-                masked_image = Image.fromarray(masked_image_np.astype(np.uint8))
                 
-                mask_image.save(f'/kaggle/working/debug/mask_tmp/image_id{image_id}_maskid{idx}.png')
-                roi_images.append(masked_image)
-                self.logger.info(f"Successfully processed mask {idx}")
+                roi_images.append(cropped_image_np)
+                roi_images_masks.append(cropped_mask)
+                roi_bounding_boxes.append(bbox)
+                self.logger.debug(f"Successfully processed mask {idx}")
             except Exception as e:
                 self.logger.error(f"Error processing mask {idx}: {str(e)}")
                 continue
         self.logger.info(f"Successfully converted {len(roi_images)} masks to ROI images")
-        return roi_images
+        return roi_images, roi_images_masks, roi_bounding_boxes
 
+    def _convert_images_to_tensor(self, images: List) -> torch.Tensor:
+        """Convert list of PIL images or numpy arrays to tensor and resize to target size"""
+        tensors = []
+        image_transforms = T.Compose([
+            T.Resize((224,224)),
+            T.ToTensor(),
+        ])
+        for img in images:
+            try:
+                if isinstance(img, np.ndarray):
+                    img = Image.fromarray(img)
 
+                img_tensor = image_transforms(img)
+                tensors.append(img_tensor)
+            except Exception as e:
+                print("Inside images to tensor: ", e)
+                raise e
+        
+        return torch.stack(tensors).to(self.device)
+    
+    def _convert_masks_to_tensor(self, masks: List) -> torch.Tensor:
+        """Convert list of segmentation masks to tensor and resize to target size"""
+        tensors = []
+        mask_transforms = T.Compose([
+            T.Resize((224,224), interpolation=T.InterpolationMode.NEAREST)
+        ])
+        for mask in masks:
+            try:
+                if isinstance(mask, np.ndarray):
+                    mask_img = Image.fromarray(mask.astype(np.uint8))
+                else:
+                    mask_img = Image.fromarray(np.array(mask).astype(np.uint8))
+
+                mask_resized = mask_transforms(mask_img)
+
+                mask_tensor = torch.from_numpy(np.array(mask_resized)).float()
+                tensors.append(mask_tensor)
+            except Exception as e:
+                print("Inside mask to tensor: ", e)
+                raise e
+        
+        return torch.stack(tensors).to(self.device)
     def extract_rois(
         self,
         image_tensor: torch.Tensor,
         bounding_boxes: List[List[int]]
-    ) -> Tuple[List[Dict[str, Any]], List[Image.Image]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Extract rois from an image using SAM2.1 model and convert them to PIL images   
 
         Args:
@@ -535,7 +645,6 @@ class ROIMatching:
             - List of ROI images
         """
 
-
         try:
             image = torchvision.transforms.ToPILImage()(image_tensor)
             image_np = np.array(image)
@@ -546,19 +655,23 @@ class ROIMatching:
         
         all_roi_masks = []
         all_roi_images = []
+        all_roi_boxes = []
 
+        rois_idx_2_image = {}
+        
+        rois_id = 0
         for idx, bbox in enumerate(bounding_boxes):
             try:
-                self.logger.info(f"Processing bounding box {idx}: {bbox}")
+                self.logger.debug(f"Processing bounding box {idx}: {bbox}")
                 x1, y1, x2, y2 = map(int, bbox)
                 
                 cropped_image = image.crop((x1, y1, x2, y2))
                 cropped_image.save(f'/kaggle/working/debug/image_cropped/image_{idx}.png')
                 cropped_np = np.array(cropped_image)
                 
-                self.logger.info(f"Extracting ROIs from bbox {idx}")
+                self.logger.debug(f"Extracting ROIs from bbox {idx}")
                 roi_masks = self.segment_model.predict(cropped_np)
-                self.logger.info(f"Extracted {len(roi_masks)} ROIs from bbox {idx}")
+                self.logger.debug(f"Extracted {len(roi_masks)} ROIs from bbox {idx}")
 
                 # for mask in roi_masks:
                 #     mask_bbox = mask['bbox']
@@ -566,21 +679,45 @@ class ROIMatching:
                 #     mask_bbox[1] += y1  
                 #     all_roi_masks.append(mask)
 
-                roi_images = self.masks_to_roi_images(idx,cropped_image, roi_masks)
+                roi_images, roi_image_masks, roi_bounding_boxes = self.masks_to_roi_images(idx,cropped_image, roi_masks)
                 
-                all_roi_images.extend(roi_images)
+                roi_images_tensor = self._convert_images_to_tensor(roi_images)
+                all_roi_images.append(roi_images_tensor)
+
+                roi_masks_tensor = self._convert_masks_to_tensor(roi_image_masks)
+                all_roi_masks.append(roi_masks_tensor)
+
+                roi_boxes_tensor = torch.tensor(roi_bounding_boxes, dtype=torch.float32, device=self.device)
+                all_roi_boxes.append(roi_boxes_tensor)
+
+                for _ in range(len(roi_images)):
+                    rois_idx_2_image[rois_id] = idx
+                    rois_id += 1
+
+
                 self.logger.info(f"Processed {len(roi_images)} ROI images from bbox {idx}")
 
             except Exception as e:
                 self.logger.error(f"Error processing bbox {idx}: {e}")
                 continue
-
+        
         if not all_roi_masks:
             self.logger.warning("No ROIs detected in any of the bounding boxes")
         else:
             self.logger.info(f"Total ROIs extracted: {len(all_roi_masks)}")
 
-        return all_roi_masks, all_roi_images
+        print("INDEXX: ", rois_idx_2_image)    
+        if all_roi_images and all_roi_masks:
+            all_roi_images_tensor = torch.cat(all_roi_images, dim=0)
+            all_roi_masks_tensor = torch.cat(all_roi_masks, dim=0)
+            all_roi_boxes_tensor = torch.cat(all_roi_boxes, dim=0)
+            print("All roi images tensor shape:", all_roi_images_tensor.shape)
+            print("All roi masks tensor shape: ", all_roi_masks_tensor.shape)
+            print("All roi boxes tensor shape: ", all_roi_boxes_tensor.shape)
+            return all_roi_images_tensor, all_roi_masks_tensor, all_roi_boxes_tensor, rois_idx_2_image
+        else:
+            return torch.empty(0), torch.empty(0), torch.empty(0), {}
+
     
 def process_worker(rank:int, world_size:int, config: Config, return_list:List[Dict[str,Any]]) -> List[Dict[str, Any]]:
     """Worker function for each process
@@ -591,7 +728,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         config (Config): Configuration
         return_list (List[Dict[str,Any]]): _description_
     """
-    logger, log_file = setup_logging(config.output_dir, rank)
+    logger, _ = setup_logging(config.output_dir, rank)
     logger.info(f"Process {rank}/{world_size-1} starting")
     logger.info(f"Using config: {config}")
     
@@ -672,7 +809,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
 
 
     try:
-        logger.info(f"Initialzing Faiss Index")
+        logger.info("Initialzing Faiss Index")
         faiss_index_strategy  = FaissIndexStrategy()
         faiss_index_strategy.load(faiss_config.index_load_path)
         logger.info(f"FAISS index configuration - Type: {config.faiss.index_type}, "
@@ -685,7 +822,6 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         logger.info(f"Loaded index2category from path{config.data.index2category_path}")
         index2category = load_json(config.data.index2category_path)
         index2cat = index2category['object_name']
-        logger.info(f"Loaded Complete, value of 5 first element: {index2cat[:5]}")
     except Exception as e:
         logger.error(f"Failed to load index2category mapping: {e}")
         return
@@ -731,20 +867,21 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     total_processed = 0
     total_successful = 0
     total_failed = 0
-
+    
 
     ## make place of saving images
     save_image_path = os.path.join(config.data.output_dir, "annotated_images")
     os.makedirs(save_image_path, exist_ok=True)
 
-    
+    to_pil = T.ToPILImage()
+
     for batch in tqdm(data_loader, desc="Processing batch of images..."):
         
 
-        print(batch)
         image_id = batch['id'][0]
         image_path = batch['image_path'][0]
         image = batch['image'][0]
+        image_PIL = to_pil(image)
         bboxes = batch['bounding_boxes'][0]
 
         image_name =  os.path.basename(os.path.split(image_path)[0]) + os.path.basename(image_path)
@@ -756,30 +893,37 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         try:
             logger.info(f"Extracting ROIs for image {image_id}")
             roi_extraction_start = datetime.now()
-            roi_masks, roi_images = roi_matcher.extract_rois(
+            roi_images, roi_masks, roi_bboxes,rois_idx_2_image = roi_matcher.extract_rois(
                 image_tensor=image,
                 bounding_boxes=bboxes
             )
             roi_extraction_time = (datetime.now() - roi_extraction_start).total_seconds()
             logger.info(f"ROI extraction completed in {roi_extraction_time:.2f} seconds. Found {len(roi_images)} ROIs")
             
-            if not roi_images:
+            save_tensor_images(roi_images, roi_masks, '/kaggle/working/debug')
+            if roi_images is None or len(roi_images) == 0:
                 logger.warning(f"No ROIs found for image ID: {image_id}")
                 total_failed += 1
                 continue
                 
             logger.info(f"Extracting features for {len(roi_images)} ROIs")
             feature_extraction_start = datetime.now()
-            features: torch.Tensor = feature_extractor.extract_features(roi_images)
+            
+#             feature_matrix = []
+#             for i, _ in enumerate(roi_images):
+#                 feature = torch.tensor(feature_extractor.extract_features(roi_images[i], roi_masks[i]))
+#                 feature_matrix.append(feature)
+#             feature_matrix = torch.cat(feature_matrix, dim=0)
+            feature_matrix = torch.from_numpy(feature_extractor.extract_features(roi_images, roi_masks))
+            print("Feature matrix shape: ", feature_matrix.shape)          
             feature_extraction_time = (datetime.now() - feature_extraction_start).total_seconds()
             logger.info(f"Feature extraction completed in {feature_extraction_time:.2f} seconds")
-            
-            if not isinstance(features, torch.Tensor):
-                logger.error(f"Feature extraction returned non-tensor type {type(features)} for image ID: {image_id}")
+            if not isinstance(feature_matrix, torch.Tensor):
+                logger.error(f"Feature extraction returned non-tensor type {type(feature_extraction_start)} for image ID: {image_id}")
                 total_failed += 1
                 continue
             
-            features_np = features.cpu().detach().numpy()
+            features_np = feature_matrix.cpu().detach().numpy()
             logger.info(f"Feature shape: {features_np.shape}")
             
             if features_np.size == 0:
@@ -788,63 +932,78 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 continue
 
             logger.info("Starting optimized search and match")
+            
             matching_start = datetime.now()
-            engagement_matrix, indices = optimized_search_and_match(
+            engagement_matrix, _, preference_mat = optimized_search_and_match(
                 faiss_index_strategy=faiss_index_strategy,
                 features_np=features_np,
                 faiss_config=faiss_config,
                 logger=logger,
                 initial_k=faiss_config.k_return
             )
+            
             matching_time = (datetime.now() - matching_start).total_seconds()
             logger.info(f"Search and match completed in {matching_time:.2f} seconds")
+
+            logger.info("\n====Detail matching  =======\n")
+            roi_to_vec = {}
+            for roi_idx in range(preference_mat.shape[0]):
+                match_indices = np.where(engagement_matrix[roi_idx] == 1)[0]
+                if len(match_indices) > 0:
+                    roi_to_vec[roi_idx] = match_indices[0]
+            logger.info("\nROI to Vector Mapping:")
+            logger.info("Format: ROI_ID -> Matched_Vector_Index (Similarity_Score)")
             
-            matches_found = 0
-            for roi_idx, mask in enumerate(roi_masks):
-                logger.info(f"Processing ROI {roi_idx}/{len(roi_masks)-1}")
-                matched_obj_indices = np.where(engagement_matrix[roi_idx] == 1)[0]
-                if len(matched_obj_indices) == 0:
-                    logger.info(f"No match found for ROI {roi_idx} in image {image_id}")
+            sorted_rois = sorted(roi_to_vec.keys())
+            for roi_idx in sorted_rois:
+                vector_idx = roi_to_vec[roi_idx]
+                score = preference_mat[roi_idx, vector_idx]
+                # print("ROI index: ", roi_idx)
+                # print("Vector index: ", vector_idx)
+                # print("Category: ", index2cat[vector_idx])
+                # print("Score index: ", score)
+                if score < config.sam_threshold:
+                    logger.debug("Confidence score to low, skip")
                     continue
+                category_id = index2cat[vector_idx].split('_')[0]
+                old_bounding_box = bboxes[rois_idx_2_image[roi_idx]]
+                logger.debug(f"ROI {roi_idx} matched to category: {category_id}")
+               
+                bounding_box = roi_bboxes[roi_idx]
+                logger.debug(f"Original Bounding box: {old_bounding_box}")
+                logger.debug(f"Bounding box, relatives to the image {bounding_box} ")
                 
-                matches_found += 1
-                obj_idx = matched_obj_indices[0]
-                faiss_index = indices[roi_idx][obj_idx]
-                category_id = index2cat[faiss_index].split('_')[0]
-                old_bounding_box = bboxes[roi_idx]
                 
-                logger.info(f"ROI {roi_idx} matched to category: {category_id}")
-            
-                
-                bounding_box = mask['bbox']
-                logger.info(f"Original Bounding box: {bounding_box}")
-                logger.info(f"Bounding box, relatives to the image {old_bounding_box} ")
-                for box in bounding_box:
-                    x, y= box[0], box[1]
-                    x0, y0 = old_bounding_box[0], old_bounding_box[1]
-                    x = x + x0
-                    y = y + y0
-                    box[0] = x
-                    box[1] = y
+                x, y= bounding_box[0], bounding_box[1]
+                x0, y0 = old_bounding_box[0], old_bounding_box[1]
+                x = x + x0
+                y = y + y0
+                bounding_box[0] = x
+                bounding_box[1] = y
+
+
+                bounding_box[2] = bounding_box[2] + bounding_box[0]
+                bounding_box[3] = bounding_box[3] + bounding_box[1]
                 logger.info(f"Transformed bbox: {bounding_box}")
 
                 try:
                     plot_boxes_to_image(
-                        image,
+                        image_PIL,
                         [bounding_box],
                         [category_id],
                         os.path.join(save_image_path,image_name)
                     )
-                    logger.info(f"Successfully saved annotated image for ROI {roi_idx}")
+                    logger.debug(f"Successfully saved annotated image for ROI {roi_idx}")
                 except Exception as e:
                     logger.error(f"Failed to save annotated image for ROI {roi_idx}: {str(e)}")
-                    
+                
                 results.append({
                     'image_id': image_id,
                     'category_id': category_id,
                     'bounding_box': bounding_box,
                     'scale': 1  
                 })
+                matches_found = True
                 if matches_found > 0:
                     total_successful += 1
                 else:
@@ -855,33 +1014,63 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
             continue
         total_processed += 1
         if total_processed % 10 == 0:
-            success_rate = (total_successful / total_processed) * 100 if total_processed > 0 else 0
-            logger.info(f"Progress Update - Processed: {total_processed}, "
-                    f"Successful: {total_successful}, Failed: {total_failed}, "
-                    f"Success Rate: {success_rate:.2f}%")
-    final_success_rate = (total_successful / total_processed) * 100 if total_processed > 0 else 0
-    logger.info(f"Processing Complete - Total Images: {total_processed}, "
-            f"Successful: {total_successful}, Failed: {total_failed}, "
-            f"Overall Success Rate: {final_success_rate:.2f}%")
-    
-    
-    all_results = [None] * world_size 
-    logger.info("Gathering results from all processes")
-    try:
-        dist.all_gather_object(all_results, results)
-        logger.info(f"Successfully gathered results from all {world_size} processes")
-    except Exception as e:
-        logger.error(f"Failed to gather results from processes: {str(e)}")
-        raise e
-    
-    if rank == 0:
-        logger.info("Process 0: Flattening results from all processes")
-        flattened_results = [item for sublist in all_results for item in sublist]
-        logger.info(f"Total results gathered: {len(flattened_results)}")
-        return flattened_results
+                logger.info(f"Progress Update - Processed: {total_processed}, "
+                          f"Successful: {total_successful}, Failed: {total_failed}, ")
+    if total_processed > 0:
+        logger.info(f"Processing Complete - Total Images: {total_processed}, "
+                   f"Successful: {total_successful}, Failed: {total_failed}")
+    if config.distributed:
+        all_results = [None] * world_size
+        logger.info("Gathering results from all processes")
+        try:
+            cpu_results = []
+            for result in results:
+                cpu_result = {}
+                for k,v in result.items():
+                    if isinstance(v, torch.Tensor):
+                        cpu_result[k] = v.cpu()
+                    else:
+                        cpu_result[k] = v
+                cpu_results.append(cpu_result)
+            dist.all_gather_object(all_results,cpu_results)
+            logger.info(f"Successfully gathered results from all {world_size} processes")
+        except Exception as e:
+            logger.error(f"Failed to gather results from all processes due to e: {e}")
+            raise e
+        
+        if rank == 0:
+            logger.info("Process 0: Flattening results from all processes")
+            flattened_results = [item for sublist in all_results for item in sublist]
+
+            logger.info(f"Total results gathered: {len(flattened_results)}")
+            simplified_results = []
+            for result in flattened_results:
+                simplified_result = {}
+                for k, v in result.items():
+                    if isinstance(v, (torch.Tensor, np.ndarray)):
+                        simplified_result[k] = v.tolist()
+                    else:
+                        simplified_result[k] = v
+                simplified_results.append(simplified_result)
+
+            return_list.extend(simplified_results)
+            return simplified_results
     else:
-        logger.info(f"Process {rank}: Returning empty results list")
-        return []
+        simplified_results = []
+        for result in results:
+            simplified_result = {}
+            for k, v in result.items():
+                if isinstance(v, (torch.Tensor, np.ndarray)):
+                    simplified_result[k] = v.tolist()
+                else:
+                    simplified_result[k] = v
+            simplified_results.append(simplified_result)
+        return_list.extend(simplified_results)
+        return simplified_results
+
+    logger.info(f"Process {rank}: Returning empty results list")
+    return []
+
 def main_worker(rank: int, world_size: int, config: Config, return_list: List[Dict[str, Any]]):
     """
     Worker function to be spawned via torch.multiprocessing.
@@ -892,7 +1081,7 @@ def main_worker(rank: int, world_size: int, config: Config, return_list: List[Di
         config (Config): Configuration.
         return_list (List[Dict[str, Any]]): Shared list to collect results.
     """
-    process_worker(rank, world_size, config, return_list)
+    results = process_worker(rank, world_size, config, return_list)
 
 def main():
     args = parse_args()
@@ -925,16 +1114,14 @@ def main():
     logger.info("All processes have finished. Aggregating results.")
     return_list = list(return_list)
 
-    if return_list:
-        df = pd.DataFrame(return_list)
+    results = list(return_list)
+    if results and any(results):  
+        df = pd.DataFrame(results)
         output_path = os.path.join(config.output_dir, "roi_matching_results.csv")
         os.makedirs(config.output_dir, exist_ok=True)
         save_dataframe(df, output_path)
         logger.info(f"ROI Matching results saved to {output_path}")
-    
     else:
         logger.warning("No results to save")
-
-
 if __name__ == "__main__":
     main()

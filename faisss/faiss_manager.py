@@ -241,7 +241,7 @@ class FaissIndexStrategy:
 
         query_vector = np.asarray(query_vector).astype('float32')
         faiss.normalize_L2(query_vector)
-        D, I = self.index.search(query_vector)
+        D, I = self.index.search(query_vector, k=k)
         return D, I
 
     def save(self, filename:str)->None:
