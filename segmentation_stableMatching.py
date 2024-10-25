@@ -281,7 +281,7 @@ def stable_matching(preference_mat: np.ndarray, logger: logging.Logger):
             else:
                 logger.debug(f"Current ROI {current_roi} preferred over new ROI {roi}")
                 free_rois.append(roi)
-    print("Engagement matrix: ", engagement_matrix)
+    # print("Engagement matrix: ", engagement_matrix)
     final_matches = np.sum(engagement_matrix)
     logger.debug(f"Stable matching completed with {final_matches} total matches")
     logger.debug(f"Matches per ROI: {np.sum(engagement_matrix, axis=1)[:5]}... (showing first 5)")
@@ -579,7 +579,7 @@ class ROIMatching:
                 )
                 self.logger.debug(f"Cropped image size for mask {idx}: {cropped_image.size}")
                 full_mask = mask['segmentation'].astype(np.uint8)
-                print("FULL_MAKS segmentation shape:", full_mask.shape)
+                # print("FULL_MAKS segmentation shape:", full_mask.shape)
                 if full_mask.shape[0] < y + height or full_mask.shape[1] < x + width:
                     self.logger.error(f"Mask dimensions mismatch for mask {idx}")
                     continue
@@ -665,7 +665,7 @@ class ROIMatching:
         try:
             image = torchvision.transforms.ToPILImage()(image_tensor)
             image_np = np.array(image)
-            self.logger.info(f"Converted tensor to image array of shape: {image_np.shape}")
+            # self.logger.info(f"Converted tensor to image array of shape: {image_np.shape}")
         except Exception as e:
             self.logger.error(f"Failed to convert tensor to image: {e}")
             raise e
@@ -723,7 +723,7 @@ class ROIMatching:
         else:
             self.logger.info(f"Total ROIs extracted: {len(all_roi_masks)}")
 
-        print("INDEXX: ", rois_idx_2_image)    
+        # print("INDEXX: ", rois_idx_2_image)    
         if all_roi_images and all_roi_masks:
             all_roi_images_tensor = torch.cat(all_roi_images, dim=0)
             all_roi_masks_tensor = torch.cat(all_roi_masks, dim=0)
@@ -877,7 +877,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         bboxes = batch['bounding_boxes'][0]
         image_name =  os.path.basename(os.path.split(image_path)[0]) + os.path.basename(image_path)
         logger.info(f"Processing image ID: {image_id} from path: {image_path}")
-        logger.info(f"Image shape: {image.size if hasattr(image, 'size') else 'unknown'}")
+        logger.info(f"Image shape: {image.size() if hasattr(image, 'size') else 'unknown'}")
         logger.info(f"Number of bounding boxes: {len(bboxes)}")
 
         try:
@@ -976,7 +976,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
 
                 bounding_box[2] = bounding_box[2] + bounding_box[0]
                 bounding_box[3] = bounding_box[3] + bounding_box[1]
-                logger.info(f"Transformed bbox: {bounding_box}")
+                # logger.info(f"Transformed bbox: {bounding_box}")
 
                 boxes.append(bounding_box)
                 scores.append(score)

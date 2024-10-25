@@ -268,10 +268,10 @@ class SegmentModel:
         print(f"[SegmentModel] Processing image with shape: {image.shape}")
         masks = self.mask_generator.generate(image)
         print(f"[SegmentModel] Generated {len(masks)} masks")
-        for i, mask in enumerate(masks):
-            print(f"[SegmentModel] Mask {i+1} - Area: {mask['area']}, "
-                  f"BBox: {mask['bbox']}, "
-                  f"Predicted IoU: {mask['predicted_iou']:.3f}, "
-                  f"Stability Score: {mask['stability_score']:.3f}",
-                  f"Mask segmentation shape:{mask['segmentation'].shape}")
+        # for i, mask in enumerate(masks):
+        #     print(f"[SegmentModel] Mask {i+1} - Area: {mask['area']}, "
+        #           f"BBox: {mask['bbox']}, "
+        #           f"Predicted IoU: {mask['predicted_iou']:.3f}, "
+        #           f"Stability Score: {mask['stability_score']:.3f}",
+        #           f"Mask segmentation shape:{mask['segmentation'].shape}")
         return masks
