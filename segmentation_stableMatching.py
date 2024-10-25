@@ -69,6 +69,22 @@ class Config:
 
 
 # ========================= HELPER FUNCTIONS =========================
+
+def perform_nms(boxes: List[torch.Tensor], scores: List[float], iou_threshold: float = 0.5) -> List[int]:
+    if not boxes:
+        return []
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if isinstance(boxes[0], torch.Tensor):
+        boxes_tensor = torch.stack(boxes).to(device)
+    else:
+        boxes_tensor = torch.tensor(boxes, dtype=torch.float32).to(device)
+
+    scores_tensor = torch.tensor(scores, dtype=torch.float32).to(device)
+
+    keep_indices = torchvision.ops.nms(boxes_tensor, scores_tensor, iou_threshold)
+    return keep_indices
+
 def optimized_search_and_match(
 faiss_index_strategy: FaissIndexStrategy,
 features_np: np.ndarray,
@@ -203,7 +219,8 @@ def load_config(config_path: str)  -> Config:
         output_dir= config_dict['output_dir'],
         distributed=config_dict['distributed'],
         world_size=config_dict['world_size'],
-        seed = config_dict.get('seed',42)
+        seed = config_dict.get('seed',42),
+        sam_threshold= config_dict.get('sam_threshold', 0.5)
     )
     return config
 
@@ -731,23 +748,19 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     logger, _ = setup_logging(config.output_dir, rank)
     logger.info(f"Process {rank}/{world_size-1} starting")
     logger.info(f"Using config: {config}")
-    
     args = parse_args()
     config = load_config(args.config)
     try:
         image_configs = load_json(config.data.image_config_path)
         logger.info(f"Loaded {len(image_configs)} image configurations")
-    
-        logger.info(f"First image config: {image_configs[0] if image_configs else 'No configs'}")
+        # logger.info(f"First image config: {image_configs[0] if image_configs else 'No configs'}")
     except Exception as e:
         logger.error(f"Failed to load image configs: {str(e)}")
         return
-
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
     logger.info(f"Set random seed to {config.seed}")
-
     try:
         if config.distributed:
             setup_distributed(rank, world_size, logger)
@@ -776,13 +789,9 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     except Exception as e:
         logger.error(f"Failed to initialize ROI matcher: {str(e)}")
         return
-    
-    
-
     if 'feature_extractor' not in config.models:
         logger.error("Feature extractor configuration 'feature_extractor' not found in 'models'")
         return
-
     feature_model_config = config.models['feature_extractor']
     model_type_str = feature_model_config.type_model.upper()
     try:
@@ -804,10 +813,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     except Exception as e:
         logger.error(f"Failed to initialize FeatureExtractor: {e}")
         raise e
-    
     faiss_config = config.faiss
-
-
     try:
         logger.info("Initialzing Faiss Index")
         faiss_index_strategy  = FaissIndexStrategy()
@@ -825,9 +831,8 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     except Exception as e:
         logger.error(f"Failed to load index2category mapping: {e}")
         return
-
     try:
-        logger.info(f"Initializing the ImageDataset")
+        logger.info("Initializing the ImageDataset")
         dataset = ImageDataset(
             image_configs=image_configs,
             logger=logger
@@ -836,8 +841,6 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     except Exception as e:
         logger.error(f"Failed to create ImageDataset: {e}")
         return
-
-
     if config.distributed:
         sampler = DistributedSampler(
             dataset=dataset,
@@ -848,8 +851,6 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         logger.info(f"Sampler Distributed has been set up with hyperparameters: {world_size, rank}")
     else:
         sampler=None
-    
-    
     logger.info("Setting up DataLoader")
     data_loader = DataLoader(
         dataset,
@@ -860,32 +861,21 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         pin_memory=True,
         collate_fn=dataset.collate_fn
     )
-
     results = []
-    
     logger.info(f"Starting to process {len(dataset)} images")
     total_processed = 0
     total_successful = 0
     total_failed = 0
-    
-
-    ## make place of saving images
     save_image_path = os.path.join(config.data.output_dir, "annotated_images")
     os.makedirs(save_image_path, exist_ok=True)
-
     to_pil = T.ToPILImage()
-
     for batch in tqdm(data_loader, desc="Processing batch of images..."):
-        
-
         image_id = batch['id'][0]
         image_path = batch['image_path'][0]
         image = batch['image'][0]
         image_PIL = to_pil(image)
         bboxes = batch['bounding_boxes'][0]
-
         image_name =  os.path.basename(os.path.split(image_path)[0]) + os.path.basename(image_path)
-        
         logger.info(f"Processing image ID: {image_id} from path: {image_path}")
         logger.info(f"Image shape: {image.size if hasattr(image, 'size') else 'unknown'}")
         logger.info(f"Number of bounding boxes: {len(bboxes)}")
@@ -908,12 +898,6 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 
             logger.info(f"Extracting features for {len(roi_images)} ROIs")
             feature_extraction_start = datetime.now()
-            
-#             feature_matrix = []
-#             for i, _ in enumerate(roi_images):
-#                 feature = torch.tensor(feature_extractor.extract_features(roi_images[i], roi_masks[i]))
-#                 feature_matrix.append(feature)
-#             feature_matrix = torch.cat(feature_matrix, dim=0)
             feature_matrix = torch.from_numpy(feature_extractor.extract_features(roi_images, roi_masks))
             print("Feature matrix shape: ", feature_matrix.shape)          
             feature_extraction_time = (datetime.now() - feature_extraction_start).total_seconds()
@@ -955,6 +939,13 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
             logger.info("Format: ROI_ID -> Matched_Vector_Index (Similarity_Score)")
             
             sorted_rois = sorted(roi_to_vec.keys())
+
+            boxes = []
+            scores = []
+            categories = []
+            classes_name = []
+
+
             for roi_idx in sorted_rois:
                 vector_idx = roi_to_vec[roi_idx]
                 score = preference_mat[roi_idx, vector_idx]
@@ -966,6 +957,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                     logger.debug("Confidence score to low, skip")
                     continue
                 category_id = index2cat[vector_idx].split('_')[0]
+                category_class = ' '.join(index2cat[vector_idx].split('_')[1:])
                 old_bounding_box = bboxes[rois_idx_2_image[roi_idx]]
                 logger.debug(f"ROI {roi_idx} matched to category: {category_id}")
                
@@ -986,23 +978,39 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 bounding_box[3] = bounding_box[3] + bounding_box[1]
                 logger.info(f"Transformed bbox: {bounding_box}")
 
+                boxes.append(bounding_box)
+                scores.append(score)
+                categories.append(category_id)
+                classes_name.append(category_class)
+
+            if boxes:
+                logger.info(f"Number of boxes before nms: {len(boxes)}")
+                keep_indices = perform_nms(boxes, scores, 0.5)
+                logger.info(f"Number of boxes after nms: {len(keep_indices)}")
+                kept_boxes = []
+                kept_classes = []
+                for idx in keep_indices:
+                    results.append({
+                        'image_id': image_id,
+                        'category_id': categories[idx],
+                        'bounding_box': boxes[idx],
+                        'score': scores[idx],
+                        'scale': 1
+                    })
+                    kept_boxes.append(boxes[idx])
+                    kept_classes.append(classes_name[idx])
                 try:
                     plot_boxes_to_image(
                         image_PIL,
-                        [bounding_box],
-                        [category_id],
+                        kept_boxes,
+                        kept_classes,
                         os.path.join(save_image_path,image_name)
                     )
                     logger.debug(f"Successfully saved annotated image for ROI {roi_idx}")
                 except Exception as e:
                     logger.error(f"Failed to save annotated image for ROI {roi_idx}: {str(e)}")
                 
-                results.append({
-                    'image_id': image_id,
-                    'category_id': category_id,
-                    'bounding_box': bounding_box,
-                    'scale': 1  
-                })
+               
                 matches_found = True
                 if matches_found > 0:
                     total_successful += 1
@@ -1072,23 +1080,11 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     return []
 
 def main_worker(rank: int, world_size: int, config: Config, return_list: List[Dict[str, Any]]):
-    """
-    Worker function to be spawned via torch.multiprocessing.
-
-    Args:
-        rank (int): Rank of the process.
-        world_size (int): Total number of processes.
-        config (Config): Configuration.
-        return_list (List[Dict[str, Any]]): Shared list to collect results.
-    """
     results = process_worker(rank, world_size, config, return_list)
-
 def main():
     args = parse_args()
     config = load_config(args.config)
-
     logger, _ = setup_logging(config.output_dir)
-
     logger.info("Starting Image ROI Matching system")
     random.seed(config.seed)
     np.random.seed(config.seed)
@@ -1096,10 +1092,8 @@ def main():
     torch.cuda.manual_seed_all(config.seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
     manager = mp.Manager()
     return_list = manager.list()
-
     try:
         mp.spawn(
             fn=main_worker,
@@ -1113,7 +1107,6 @@ def main():
     
     logger.info("All processes have finished. Aggregating results.")
     return_list = list(return_list)
-
     results = list(return_list)
     if results and any(results):  
         df = pd.DataFrame(results)

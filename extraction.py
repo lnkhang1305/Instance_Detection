@@ -287,13 +287,17 @@ class FeatureExtractor:
 
         Args:
             images (torch.Tensor): Batch of images (B, C, H, W).
-            masks (torch.Tensor): Batch of masks (B, H, W).
+            masks (torch.Tensor): Batch of masks (B,C, H, W).
 
         Returns:
             np.ndarray: CLIP feature vectors (B, D).
         """
+        print("Images dimension: ", images.dim())
+        print("Mask dimension: ", masks.dim())
         binary_masks = self._prepare_binary_mask(masks)  
         
+        if binary_masks.dim() < 4:
+            binary_masks = binary_masks.unsqueeze(1)
         binary_masks = binary_masks.expand(-1, images.size(1), -1, -1) 
         masked_images = images * binary_masks
         
