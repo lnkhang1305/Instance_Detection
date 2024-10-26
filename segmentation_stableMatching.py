@@ -61,9 +61,11 @@ class Config:
     faiss: FaissConfig
     data: DataConfig
     output_dir: str
+    debug_dir: str
     sam_threshold:int
     distributed:bool
     world_size:int 
+    image_size: Tuple[int,int]
     seed:int=42
 
 
@@ -220,7 +222,9 @@ def load_config(config_path: str)  -> Config:
         distributed=config_dict['distributed'],
         world_size=config_dict['world_size'],
         seed = config_dict.get('seed',42),
-        sam_threshold= config_dict.get('sam_threshold', 0.5)
+        sam_threshold= config_dict.get('sam_threshold', 0.5),
+        debug_dir = config_dict.get('debug_dir', '/kaggle/working/debug'),
+        image_size = config_dict.get('image_size', (224,224))
     )
     return config
 
@@ -512,7 +516,8 @@ class ROIMatching:
         model_checkpoint: str,
         model_config: str,
         device: torch.device,
-        logger: logging.Logger
+        logger: logging.Logger,
+        global_config: Config
     ):
         """
         Initialize the ROI Matcher with the SAM2.1 model.
@@ -542,6 +547,8 @@ class ROIMatching:
         except Exception as e:
             self.logger.error(f"Failed to initialize SAM2.1 model: {str(e)}")
             raise
+            
+        self.global_config = global_config
 
         # self.logger.info("SAM2.1 Segment Model Initialized sucessfully")
     
@@ -585,6 +592,7 @@ class ROIMatching:
                     continue
                 cropped_mask = full_mask[y:y+height, x:x+width]
                 cropped_image_np = np.array(cropped_image)
+                cropped_image_np.save(os.path.join(self.global_config.debug_dir), 'images_cropped', f"image_{image_id}_crop_{idx}.png")
                 self.logger.debug(f"Cropped image array shape: {cropped_image_np.shape}")
 
                 if len(cropped_image_np.shape) == 2:
@@ -604,11 +612,11 @@ class ROIMatching:
         # self.logger.info(f"Successfully converted {len(roi_images)} masks to ROI images")
         return roi_images, roi_images_masks, roi_bounding_boxes
 
-    def _convert_images_to_tensor(self, images: List) -> torch.Tensor:
+    def _convert_images_to_tensor(self, images: List, image_resize: Tuple[int,int] = (224,224)) -> torch.Tensor:
         """Convert list of PIL images or numpy arrays to tensor and resize to target size"""
         tensors = []
         image_transforms = T.Compose([
-            T.Resize((224,224)),
+            T.Resize((image_resize)),
             T.ToTensor(),
         ])
         for img in images:
@@ -624,11 +632,11 @@ class ROIMatching:
         
         return torch.stack(tensors).to(self.device)
     
-    def _convert_masks_to_tensor(self, masks: List) -> torch.Tensor:
+    def _convert_masks_to_tensor(self, masks: List, image_resize: Tuple[int,int] = (224,224)) -> torch.Tensor:
         """Convert list of segmentation masks to tensor and resize to target size"""
         tensors = []
         mask_transforms = T.Compose([
-            T.Resize((224,224), interpolation=T.InterpolationMode.NEAREST)
+            T.Resize(image_resize, interpolation=T.InterpolationMode.NEAREST)
         ])
         for mask in masks:
             try:
@@ -698,10 +706,10 @@ class ROIMatching:
 
                 roi_images, roi_image_masks, roi_bounding_boxes = self.masks_to_roi_images(idx,cropped_image, roi_masks)
                 
-                roi_images_tensor = self._convert_images_to_tensor(roi_images)
+                roi_images_tensor = self._convert_images_to_tensor(roi_images, self.global_config.image_size)
                 all_roi_images.append(roi_images_tensor)
 
-                roi_masks_tensor = self._convert_masks_to_tensor(roi_image_masks)
+                roi_masks_tensor = self._convert_masks_to_tensor(roi_image_masks, self.global_config.image_size)
                 all_roi_masks.append(roi_masks_tensor)
 
                 roi_boxes_tensor = torch.tensor(roi_bounding_boxes, dtype=torch.float32, device=self.device)
