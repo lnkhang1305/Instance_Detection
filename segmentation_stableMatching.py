@@ -871,14 +871,16 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
     to_pil = T.ToPILImage()
     for batch in tqdm(data_loader, desc="Processing batch of images..."):
         image_id = batch['id'][0]
+        logger.debug("*"*50)
+        logger.debug(f"Processing image id = {image_id}")
         image_path = batch['image_path'][0]
         image = batch['image'][0]
         image_PIL = to_pil(image)
         bboxes = batch['bounding_boxes'][0]
         image_name =  os.path.basename(os.path.split(image_path)[0]) + os.path.basename(image_path)
-        # logger.info(f"Processing image ID: {image_id} from path: {image_path}")
-        # logger.info(f"Image shape: {image.size() if hasattr(image, 'size') else 'unknown'}")
-        # logger.info(f"Number of bounding boxes: {len(bboxes)}")
+        logger.debug(f"Processing image ID: {image_id} from path: {image_path}")
+        logger.debug(f"Image shape: {image.size() if hasattr(image, 'size') else 'unknown'}")
+        logger.debug(f"Number of bounding boxes: {len(bboxes)}")
 
         try:
             logger.info(f"Extracting ROIs for image {image_id}")
@@ -888,7 +890,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 bounding_boxes=bboxes
             )
             roi_extraction_time = (datetime.now() - roi_extraction_start).total_seconds()
-            # logger.info(f"ROI extraction completed in {roi_extraction_time:.2f} seconds. Found {len(roi_images)} ROIs")
+            logger.debug(f"ROI extraction completed in {roi_extraction_time:.2f} seconds. Found {len(roi_images)} ROIs")
             
             save_tensor_images(roi_images, roi_masks, '/kaggle/working/debug')
             if roi_images is None or len(roi_images) == 0:
@@ -896,26 +898,26 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 total_failed += 1
                 continue
                 
-            # logger.info(f"Extracting features for {len(roi_images)} ROIs")
+            logger.info(f"Extracting features for {len(roi_images)} ROIs")
             feature_extraction_start = datetime.now()
             feature_matrix = torch.from_numpy(feature_extractor.extract_features(roi_images, roi_masks))
             print("Feature matrix shape: ", feature_matrix.shape)          
             feature_extraction_time = (datetime.now() - feature_extraction_start).total_seconds()
-            # logger.info(f"Feature extraction completed in {feature_extraction_time:.2f} seconds")
+            logger.info(f"Feature extraction completed in {feature_extraction_time:.2f} seconds")
             if not isinstance(feature_matrix, torch.Tensor):
                 logger.error(f"Feature extraction returned non-tensor type {type(feature_extraction_start)} for image ID: {image_id}")
                 total_failed += 1
                 continue
             
             features_np = feature_matrix.cpu().detach().numpy()
-            # logger.info(f"Feature shape: {features_np.shape}")
+            logger.debug(f"Feature shape: {features_np.shape}")
             
             if features_np.size == 0:
                 logger.warning(f"No features extracted for image ID: {image_id}")
                 total_failed += 1
                 continue
 
-            # logger.info("Starting optimized search and match")
+            logger.debug("Starting optimized search and match")
             
             matching_start = datetime.now()
             engagement_matrix, _, preference_mat = optimized_search_and_match(
@@ -927,7 +929,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
             )
             
             matching_time = (datetime.now() - matching_start).total_seconds()
-            # logger.info(f"Search and match completed in {matching_time:.2f} seconds")
+            logger.info(f"Search and match completed in {matching_time:.2f} seconds")
 
             # logger.info("\n====Detail matching  =======\n")
             roi_to_vec = {}
@@ -935,8 +937,8 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                 match_indices = np.where(engagement_matrix[roi_idx] == 1)[0]
                 if len(match_indices) > 0:
                     roi_to_vec[roi_idx] = match_indices[0]
-            # logger.info("\nROI to Vector Mapping:")
-            # logger.info("Format: ROI_ID -> Matched_Vector_Index (Similarity_Score)")
+            logger.debug("\nROI to Vector Mapping:")
+            logger.debug("Format: ROI_ID -> Matched_Vector_Index (Similarity_Score)")
             
             sorted_rois = sorted(roi_to_vec.keys())
 
@@ -1016,6 +1018,7 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                     total_successful += 1
                 else:
                     total_failed += 1
+            logger.debug("*"*50)
         except Exception as e:
             logger.error(f"Error processing image ID {image_id}: {str(e)}", exc_info=True)
             total_failed += 1
