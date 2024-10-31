@@ -1,4 +1,3 @@
-%%writefile /kaggle/working/Instance_Detection/segmentation_stableMatching.py
 import os
 import argparse
 import pandas as pd
