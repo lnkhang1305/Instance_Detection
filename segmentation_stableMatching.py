@@ -1,3 +1,4 @@
+%%writefile /kaggle/working/Instance_Detection/segmentation_stableMatching.py
 import os
 import argparse
 import pandas as pd
@@ -66,6 +67,9 @@ class Config:
     distributed:bool
     world_size:int 
     image_size: Tuple[int,int]
+    debug_mode: bool
+    nms_last_threshold: float
+    image_id_in_debug: int
     seed:int=42
 
 
@@ -88,11 +92,11 @@ def perform_nms(boxes: List[torch.Tensor], scores: List[float], iou_threshold: f
     return keep_indices
 
 def optimized_search_and_match(
-faiss_index_strategy: FaissIndexStrategy,
-features_np: np.ndarray,
-faiss_config: FaissConfig,
-logger: logging.Logger,
-initial_k: int = 100
+    faiss_index_strategy: FaissIndexStrategy,
+    features_np: np.ndarray,
+    faiss_config: FaissConfig,
+    logger: logging.Logger,
+    initial_k: int = 100
 ) -> Tuple[np.ndarray, np.ndarray]:
     # logger.info(f"Starting optimized search and match with initial_k={initial_k}")
     # logger.info(f"Input features shape: {features_np.shape}")
@@ -111,8 +115,8 @@ initial_k: int = 100
         initial_distances, initial_indices = faiss_index_strategy.search(
             features_np, k=min(initial_k, total_vectors)
         )
-        # logger.info(f"Initial distances shape: {initial_distances.shape}")
-        # logger.info(f"Initial indices shape: {initial_indices.shape}")
+        logger.debug(f"Initial distances shape: {initial_distances.shape}")
+        logger.debug(f"Initial indices shape: {initial_indices.shape}")
         logger.debug(f"Distance range: [{initial_distances.min():.4f}, {initial_distances.max():.4f}]")
 
     except Exception as e:
@@ -124,13 +128,12 @@ initial_k: int = 100
         preference_mat = np.full(
             (features_np.shape[0], total_vectors), -np.inf
         )
-        # logger.info(f"Preference matrix shape: {preference_mat.shape}")
+        logger.debug(f"Preference matrix shape: {preference_mat.shape}")
     except Exception as e:
         logger.error(f"Failed to create preference matrix: {str(e)}")
         raise
 
-    # Fill preference matrix
-    # logger.info("Filling preference matrix")
+    logger.debug("Filling preference matrix")
     for i in range(features_np.shape[0]):
         try:
             if metric == 'cosine':
@@ -150,8 +153,8 @@ initial_k: int = 100
     # logger.info("Applying initial stable matching")
     try:
         engagement_mat = stable_matching(preference_mat, logger=logger)
-        # logger.info(f"Initial engagement matrix shape: {engagement_mat.shape}")
-        # logger.info(f"Initial engagement matrix sum: {engagement_mat.sum()}")
+        logger.debug(f"Initial engagement matrix shape: {engagement_mat.shape}")
+        logger.debug(f"Initial engagement matrix sum: {engagement_mat.sum()}")
     except Exception as e:
         logger.error(f"Stable matching failed: {str(e)}")
         raise 
@@ -184,7 +187,7 @@ initial_k: int = 100
 
         logger.debug("Applying final stable matching")
         try:
-            engagement_mat = stable_matching(preference_mat)
+            engagement_mat = stable_matching(preference_mat, logger)
             logger.debug(f"Final engagement matrix shape: {engagement_mat.shape}")
             logger.debug(f"Final engagement matrix sum: {engagement_mat.sum()}")
         except Exception as e:
@@ -224,7 +227,10 @@ def load_config(config_path: str)  -> Config:
         seed = config_dict.get('seed',42),
         sam_threshold= config_dict.get('sam_threshold', 0.5),
         debug_dir = config_dict.get('debug_dir', '/kaggle/working/debug'),
-        image_size = config_dict.get('image_size', (224,224))
+        image_size = config_dict.get('image_size', (224,224)),
+        debug_mode = config_dict.get('debug_mode', False),
+        image_id_in_debug= config_dict.get('image_id_in_debug', 0),
+        nms_last_threshold=config_dict.get('nms_last_threshold', 0.5)
     )
     return config
 
@@ -449,12 +455,17 @@ def plot_boxes_to_image(
 
 # ============================ DATASET ==============================
 class ImageDataset(Dataset):
-    def __init__(self, image_configs: List[Dict[str,Any]], logger: logging.Logger):
-        self.image_configs = image_configs
+    def __init__(self, image_configs: List[Dict[str,Any]], logger: logging.Logger, global_config: Config):
         self.logger = logger
-        # self.logger.info(f"Finding {len(self.image_configs)} number of image(s)")
+        if global_config.debug_mode:
+           
+            self.image_configs = [image_configs[global_config.image_id_in_debug]]
+            self.logger.info(f"DEBUG MODE, IMAGE ID: {global_config.image_id_in_debug}")
+        else:
+            self.logger.info("Running all images")
+            self.image_configs = image_configs
+        
         self.transform = torchvision.transforms.Compose([
-
             torchvision.transforms.ToTensor(),
         ])
     def __len__(self):
@@ -550,7 +561,6 @@ class ROIMatching:
             
         self.global_config = global_config
 
-        # self.logger.info("SAM2.1 Segment Model Initialized sucessfully")
     
     def masks_to_roi_images(
         self,
@@ -567,50 +577,59 @@ class ROIMatching:
         Returns:
             List[Image.Image]: List of ROI Images
         """
-        # self.logger.info(f"Converting {len(masks)} masks to ROI images")
-        # self.logger.info(f"Original image size: {original_image.size}")
+        self.logger.debug(f"Converting {len(masks)} masks to ROI images")
+        self.logger.debug(f"Original image size: {original_image.size}")
         roi_images = []
         roi_images_masks = []
         roi_bounding_boxes = []
+        roi_identifiers = []
         
         for idx, mask in enumerate(masks):
             try:
                 bbox = mask['bbox']
-                x, y, width, height = map(int, bbox)
+                x, y, width, height = map(lambda x: np.float32(x), bbox)
+                y_slice = slice(int(y), int(y + height))
+                x_slice = slice(int(x), int(x + width))
                 self.logger.debug(f"Processing mask {idx} with bbox: x={x}, y={y}, w={width}, h={height}")
-                if width <= 0 or height <= 0:
+                if int(width) <= 0 or int(height) <= 0:
                     self.logger.warning(f"Invalid bbox dimensions for mask {idx}: width={width}, height={height}")
                     continue
                 cropped_image = original_image.crop(
-                    (x, y, x + width, y + height)
+                    (int(x), int(y), int(x + width), int(y + height))
                 )
                 self.logger.debug(f"Cropped image size for mask {idx}: {cropped_image.size}")
                 full_mask = mask['segmentation'].astype(np.uint8)
-                # print("FULL_MAKS segmentation shape:", full_mask.shape)
                 if full_mask.shape[0] < y + height or full_mask.shape[1] < x + width:
                     self.logger.error(f"Mask dimensions mismatch for mask {idx}")
                     continue
-                cropped_mask = full_mask[y:y+height, x:x+width]
+                cropped_mask = full_mask[y_slice, x_slice]
                 cropped_image_np = np.array(cropped_image)
-                cropped_image_np.save(os.path.join(self.global_config.debug_dir), 'images_cropped', f"image_{image_id}_crop_{idx}.png")
-                self.logger.debug(f"Cropped image array shape: {cropped_image_np.shape}")
+                
+                roi_identifier = f"{image_id}_roi_{idx}"
 
+                cropped_image_pil = Image.fromarray(cropped_image_np)
+                cropped_mask_pil = Image.fromarray(cropped_mask)
+                
+                cropped_image_pil.save(os.path.join(self.global_config.debug_dir, 'images_cropped', f"{roi_identifier}.png"))
+                cropped_mask_pil.save(os.path.join(self.global_config.debug_dir, 'masks_cropped', f"{roi_identifier}_mask.png"))
+                
+                self.logger.debug(f"Cropped image array shape: {cropped_image_np.shape}")
                 if len(cropped_image_np.shape) == 2:
                     self.logger.debug("Converting grayscale image to RGB")
                     cropped_image_np = np.stack([cropped_image_np]*3, axis=-1)
                 elif cropped_image_np.shape[2] == 4:
                     self.logger.debug("Converting RGBA image to RGB")
                     cropped_image_np = cropped_image_np[:,:,:3]
-                
                 roi_images.append(cropped_image_np)
                 roi_images_masks.append(cropped_mask)
-                roi_bounding_boxes.append(bbox)
+                roi_bounding_boxes.append([x, y, x + width, y + height])
+                roi_identifiers.append(roi_identifier) 
+
                 self.logger.debug(f"Successfully processed mask {idx}")
             except Exception as e:
                 self.logger.error(f"Error processing mask {idx}: {str(e)}")
                 continue
-        # self.logger.info(f"Successfully converted {len(roi_images)} masks to ROI images")
-        return roi_images, roi_images_masks, roi_bounding_boxes
+        return roi_images, roi_images_masks, roi_bounding_boxes, roi_identifiers
 
     def _convert_images_to_tensor(self, images: List, image_resize: Tuple[int,int] = (224,224)) -> torch.Tensor:
         """Convert list of PIL images or numpy arrays to tensor and resize to target size"""
@@ -623,13 +642,11 @@ class ROIMatching:
             try:
                 if isinstance(img, np.ndarray):
                     img = Image.fromarray(img)
-
                 img_tensor = image_transforms(img)
                 tensors.append(img_tensor)
             except Exception as e:
                 print("Inside images to tensor: ", e)
                 raise e
-        
         return torch.stack(tensors).to(self.device)
     
     def _convert_masks_to_tensor(self, masks: List, image_resize: Tuple[int,int] = (224,224)) -> torch.Tensor:
@@ -657,23 +674,26 @@ class ROIMatching:
     def extract_rois(
         self,
         image_tensor: torch.Tensor,
-        bounding_boxes: List[List[int]]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        bounding_boxes: List[List[int]],
+        image_id:str
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[int, Tuple[int,str]]]:
         """Extract rois from an image using SAM2.1 model and convert them to PIL images   
 
         Args:
-            image_path (str): Path to the Image 
+            image_tensor (torch.Tensor): Input image tensor
+            bounding_boxes (List[List[int]]): List of bounding boxes
+            image_id (str): Identifier for the image being processed
 
         Returns:
-            Tuple[List[Dict[str, Any]], List[Image.Image]]: 
-            - List of mask dictionaries
-            - List of ROI images
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[int, str]]: 
+                - Tensor of ROI images
+                - Tensor of ROI masks
+                - Tensor of ROI boxes
+                - Dictionary mapping ROI index to ROI identifier
         """
 
         try:
             image = torchvision.transforms.ToPILImage()(image_tensor)
-            image_np = np.array(image)
-            # self.logger.info(f"Converted tensor to image array of shape: {image_np.shape}")
         except Exception as e:
             self.logger.error(f"Failed to convert tensor to image: {e}")
             raise e
@@ -681,31 +701,41 @@ class ROIMatching:
         all_roi_masks = []
         all_roi_images = []
         all_roi_boxes = []
-
-        rois_idx_2_image = {}
-        
+        all_roi_identifiers = []
+        rois_idx_2_identifier  = {}
         rois_id = 0
         for idx, bbox in enumerate(bounding_boxes):
             try:
                 self.logger.debug(f"Processing bounding box {idx}: {bbox}")
-                x1, y1, x2, y2 = map(int, bbox)
-                
-                cropped_image = image.crop((x1, y1, x2, y2))
-                cropped_image.save(f'/kaggle/working/debug/image_cropped/image_{idx}.png')
+                x1, y1, x2, y2 = map(lambda x: np.float32(x), bbox)
+
+                x1_int, y1_int = int(x1), int(y1)
+                x2_int, y2_int = int(x2), int(y2)
+
+                cropped_image = image.crop((x1_int, y1_int, x2_int, y2_int))
+                bbox_identifier = f"{image_id}_bbox_{idx}"
+
+                cropped_image.save(os.path.join(self.global_config.debug_dir, 'images_cropped', f"{bbox_identifier}.png"))
                 cropped_np = np.array(cropped_image)
-                
                 self.logger.debug(f"Extracting ROIs from bbox {idx}")
                 roi_masks = self.segment_model.predict(cropped_np)
                 self.logger.debug(f"Extracted {len(roi_masks)} ROIs from bbox {idx}")
 
-                # for mask in roi_masks:
-                #     mask_bbox = mask['bbox']
-                #     mask_bbox[0] += x1  
-                #     mask_bbox[1] += y1  
-                #     all_roi_masks.append(mask)
-
-                roi_images, roi_image_masks, roi_bounding_boxes = self.masks_to_roi_images(idx,cropped_image, roi_masks)
+                roi_images, roi_image_masks, roi_bounding_boxes, roi_identifiers = self.masks_to_roi_images(
+                    bbox_identifier, cropped_image, roi_masks
+                )
                 
+                roi_images.append(cropped_np)
+                roi_bounding_boxes.append([x1,y1,x2,y2])
+                cropped_mask = np.ones_like(np.array(cropped_image)[:, :, 0], dtype=np.uint8) * 255
+                cropped_mask_pil = Image.fromarray(cropped_mask)
+                full_bbox_identifier = f"{bbox_identifier}_full"
+
+                cropped_mask_pil.save(os.path.join(self.global_config.debug_dir, 'masks_cropped', f"{full_bbox_identifier}_mask.png"))
+                roi_image_masks.append(cropped_mask_pil)
+                roi_identifiers.append(full_bbox_identifier)
+                
+
                 roi_images_tensor = self._convert_images_to_tensor(roi_images, self.global_config.image_size)
                 all_roi_images.append(roi_images_tensor)
 
@@ -715,9 +745,10 @@ class ROIMatching:
                 roi_boxes_tensor = torch.tensor(roi_bounding_boxes, dtype=torch.float32, device=self.device)
                 all_roi_boxes.append(roi_boxes_tensor)
 
-                for _ in range(len(roi_images)):
-                    rois_idx_2_image[rois_id] = idx
+                for roi_identifier in roi_identifiers:
+                    rois_idx_2_identifier[rois_id] = (idx, roi_identifier)
                     rois_id += 1
+                    all_roi_identifiers.extend(roi_identifiers)
 
 
                 self.logger.info(f"Processed {len(roi_images)} ROI images from bbox {idx}")
@@ -726,25 +757,26 @@ class ROIMatching:
                 self.logger.error(f"Error processing bbox {idx}: {e}")
                 continue
         
-        # if not all_roi_masks:
-        #     self.logger.warning("No ROIs detected in any of the bounding boxes")
-        # else:
-        #     self.logger.info(f"Total ROIs extracted: {len(all_roi_masks)}")
-
-        # print("INDEXX: ", rois_idx_2_image)    
-        if all_roi_images and all_roi_masks:
-            all_roi_images_tensor = torch.cat(all_roi_images, dim=0)
-            all_roi_masks_tensor = torch.cat(all_roi_masks, dim=0)
-            all_roi_boxes_tensor = torch.cat(all_roi_boxes, dim=0)
-            # print("All roi images tensor shape:", all_roi_images_tensor.shape)
-            # print("All roi masks tensor shape: ", all_roi_masks_tensor.shape)
-            # print("All roi boxes tensor shape: ", all_roi_boxes_tensor.shape)
-            return all_roi_images_tensor, all_roi_masks_tensor, all_roi_boxes_tensor, rois_idx_2_image
-        else:
+        if not all_roi_masks:
+            self.logger.warning("No ROIs detected in any of the bounding boxes")
             return torch.empty(0), torch.empty(0), torch.empty(0), {}
+            
+        self.logger.debug(f"Total ROIs extracted: {len(all_roi_identifiers)}")
+        self.logger.debug(f"ROI mapping: {rois_idx_2_identifier}")
+
+        all_roi_images_tensor = torch.cat(all_roi_images, dim=0)
+        all_roi_masks_tensor = torch.cat(all_roi_masks, dim=0)
+        all_roi_boxes_tensor = torch.cat(all_roi_boxes, dim=0)
+        
+        self.logger.debug(f"All roi images tensor shape: {all_roi_images_tensor.shape}")
+        self.logger.debug(f"All roi masks tensor shape: {all_roi_masks_tensor.shape}")
+        self.logger.debug(f"All roi boxes tensor shape: {all_roi_boxes_tensor.shape}")
+        
+        return all_roi_images_tensor, all_roi_masks_tensor, all_roi_boxes_tensor, rois_idx_2_identifier
 
     
 def process_worker(rank:int, world_size:int, config: Config, return_list:List[Dict[str,Any]]) -> List[Dict[str, Any]]:
+
     """Worker function for each process
 
     Args:
@@ -789,7 +821,8 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
             model_checkpoint = config.models['SAM2'].pretrained_path,
             model_config = config.models['SAM2'].model_config_path,
             device=device,
-            logger=logger
+            logger=logger,
+            global_config = config
         )
     except KeyError as e:
         logger.error(f"Missing SAM2 configuration in models config: {str(e)}")
@@ -843,7 +876,8 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         logger.info("Initializing the ImageDataset")
         dataset = ImageDataset(
             image_configs=image_configs,
-            logger=logger
+            logger=logger,
+            global_config = config
         )
         logger.info(f"Complete initializing the dataset, len = {len(dataset)}")
     except Exception as e:
@@ -893,9 +927,10 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
         try:
             logger.info(f"Extracting ROIs for image {image_id}")
             roi_extraction_start = datetime.now()
-            roi_images, roi_masks, roi_bboxes,rois_idx_2_image = roi_matcher.extract_rois(
+            roi_images, roi_masks, roi_bboxes ,rois_idx_2_identifier = roi_matcher.extract_rois(
                 image_tensor=image,
-                bounding_boxes=bboxes
+                bounding_boxes=bboxes,
+                image_id=image_id
             )
             roi_extraction_time = (datetime.now() - roi_extraction_start).total_seconds()
             logger.debug(f"ROI extraction completed in {roi_extraction_time:.2f} seconds. Found {len(roi_images)} ROIs")
@@ -955,48 +990,56 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
             categories = []
             classes_name = []
 
-
+            print("Number of rois to plot: ", len(sorted_rois))
             for roi_idx in sorted_rois:
                 vector_idx = roi_to_vec[roi_idx]
                 score = preference_mat[roi_idx, vector_idx]
-                # print("ROI index: ", roi_idx)
-                # print("Vector index: ", vector_idx)
-                # print("Category: ", index2cat[vector_idx])
-                # print("Score index: ", score)
+                print("*"*50)
+                print("ROI index: ", roi_idx)
+                print("ROI identifier name: ", rois_idx_2_identifier[roi_idx][1])
+                print("Vector index: ", vector_idx)
+                print("Category: ", index2cat[vector_idx])
+                print("Score index: ", score)
                 if score < config.sam_threshold:
-                    logger.debug("Confidence score to low, skip")
+                    print("Confidence score to low, skipping: ", rois_idx_2_identifier[roi_idx][1])
+                    print("*"*50)
+                    print()
                     continue
                 category_id = index2cat[vector_idx].split('_')[0]
                 category_class = ' '.join(index2cat[vector_idx].split('_')[1:])
-                old_bounding_box = bboxes[rois_idx_2_image[roi_idx]]
-                logger.debug(f"ROI {roi_idx} matched to category: {category_id}")
+                old_bounding_box = bboxes[rois_idx_2_identifier[roi_idx][0]]
+                print(f"ROI {roi_idx} matched to category: {category_id}")
                
                 bounding_box = roi_bboxes[roi_idx]
-                logger.debug(f"Original Bounding box: {old_bounding_box}")
-                logger.debug(f"Bounding box, relatives to the image {bounding_box} ")
+                print(f"Original Bounding box: {old_bounding_box}")
                 
                 
-                x, y= bounding_box[0], bounding_box[1]
-                x0, y0 = old_bounding_box[0], old_bounding_box[1]
-                x = x + x0
-                y = y + y0
-                bounding_box[0] = x
-                bounding_box[1] = y
+                print(f"Bounding box, relatives to the image rois {bounding_box}, type: {type(bounding_box)}")
 
+                x0_curr, y0_curr, x2_curr, y2_curr = bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3]
+                x0_old, y0_old = old_bounding_box[0], old_bounding_box[1]
 
-                bounding_box[2] = bounding_box[2] + bounding_box[0]
-                bounding_box[3] = bounding_box[3] + bounding_box[1]
-                # logger.info(f"Transformed bbox: {bounding_box}")
+                if x0_old != x0_curr:
+                    x0_new = x0_curr + x0_old
+                    y0_new = y0_curr + y0_old
+                    x2_new = x2_curr + x0_old
+                    y2_new = y2_curr + y0_old
 
+                    bounding_box[0] = x0_new
+                    bounding_box[1] = y0_new
+                    bounding_box[2] = x2_new
+                    bounding_box[3] = y2_new
+
+                print(f"Bounding box, relatives to the image {bounding_box}, type: {type(bounding_box)}")
                 boxes.append(bounding_box)
                 scores.append(score)
                 categories.append(category_id)
                 classes_name.append(category_class)
+                print("*"*50)
+                print()
 
             if boxes:
-                # logger.info(f"Number of boxes before nms: {len(boxes)}")
-                keep_indices = perform_nms(boxes, scores, 0.5)
-                # logger.info(f"Number of boxes after nms: {len(keep_indices)}")
+                keep_indices = perform_nms(boxes, scores, config.nms_last_threshold)
                 kept_boxes = []
                 kept_classes = []
                 for idx in keep_indices:
@@ -1019,8 +1062,6 @@ def process_worker(rank:int, world_size:int, config: Config, return_list:List[Di
                     logger.debug(f"Successfully saved annotated image for ROI {roi_idx}")
                 except Exception as e:
                     logger.error(f"Failed to save annotated image for ROI {roi_idx}: {str(e)}")
-                
-               
                 matches_found = True
                 if matches_found > 0:
                     total_successful += 1

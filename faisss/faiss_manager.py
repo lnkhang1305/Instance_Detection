@@ -58,7 +58,7 @@ class FaissIndexStrategy:
         self.index = None
         self._needs_training = False
         self._gpu_resources = None
-        self._metric = kwargs.get('metric', 'l2')
+        self._metric = kwargs.get('metric', 'cosine')
 
         # initialize the index
         self._create_index(**kwargs)
