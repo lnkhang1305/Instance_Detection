@@ -313,46 +313,121 @@ class SegmentModel:
         print("[SegmentModel] Model moved to cuda")
 
         self.mask_generator = SAM2AutomaticMaskGenerator(
-            self.model, points_per_batch=8)  # IMPORTANT
+            self.model, points_per_batch=8)
         print("[SegmentModel] Mask generator initialized")
 
-    def generate_rois(self, image: np.ndarray) -> List[np.ndarray]:
-        # Sử dụng Selective Search để tạo ra các ROI proposals
-        ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
-        ss.setBaseImage(image)
-        # hoặc ss.switchToSelectiveSearchQuality() cho chất lượng cao hơn
-        ss.switchToSelectiveSearchFast()
-        rects = ss.process()
+    def generate_proposals(self, image: np.ndarray, method: str = 'all') -> List[List[int]]:
+        """
+        Tạo ROI proposals bằng nhiều phương pháp khác nhau
 
-        rois = []
-        for (x, y, w, h) in rects:
-            roi = image[y:y+h, x:x+w]
-            rois.append((roi, (x, y, w, h)))  # Lưu kèm bounding box
-        return rois
+        Args:
+            image: Ảnh đầu vào
+            method: Phương pháp tạo proposals ('selective_search', 'felzenszwalb', 'slic', 'all')
+
+        Returns:
+            List các proposals dưới dạng [x, y, width, height]
+        """
+        proposals = []
+
+        if method in ['selective_search', 'all']:
+            # Sử dụng Selective Search
+            ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
+            ss.setBaseImage(image)
+            ss.switchToSelectiveSearchFast()
+            ss_proposals = ss.process()
+            proposals.extend(ss_proposals.tolist())
+
+        if method in ['felzenszwalb', 'all']:
+            # Sử dụng Felzenszwalb segmentation
+            segments = felzenszwalb(image, scale=100, sigma=0.5, min_size=50)
+            for region in regionprops(segments + 1):
+                minr, minc, maxr, maxc = region.bbox
+                proposals.append([minc, minr, maxc - minc, maxr - minr])
+
+        if method in ['slic', 'all']:
+            # Sử dụng SLIC superpixels
+            segments = slic(image, n_segments=100, compactness=10)
+            for region in regionprops(segments + 1):
+                minr, minc, maxr, maxc = region.bbox
+                proposals.append([minc, minr, maxc - minc, maxr - minr])
+
+        # Lọc bỏ các proposals quá nhỏ
+        filtered_proposals = []
+        img_area = image.shape[0] * image.shape[1]
+        for prop in proposals:
+            area = prop[2] * prop[3]
+            if area > 0.001 * img_area and area < 0.9 * img_area:
+                filtered_proposals.append(prop)
+
+        return filtered_proposals
+
+    def _process_proposal(self, image: np.ndarray, proposal: List[int]) -> Dict[str, Any]:
+        """
+        Xử lý một proposal đơn lẻ với SAM
+        """
+        x, y, w, h = proposal
+        input_box = np.array([x, y, x + w, y + h])
+        masks = self.mask_generator.generate(image, box=input_box)
+        return masks[0] if masks else None
 
     @torch.no_grad()
     def predict(self, image: np.ndarray) -> List[Dict[str, Any]]:
         print(f"[SegmentModel] Processing image with shape: {image.shape}")
 
-        # Tạo các ROI proposals từ hình ảnh
-        rois = self.generate_rois(image)
-        print(f"[SegmentModel] Generated {len(rois)} ROI proposals")
+        # Tạo proposals
+        proposals = self.generate_proposals(image)
+        print(f"[SegmentModel] Generated {len(proposals)} proposals")
 
+        # Xử lý từng proposal với SAM
         all_masks = []
-
-        for i, (roi, bbox) in enumerate(rois):
-            print(
-                f"[SegmentModel] Processing ROI {i+1}/{len(rois)} with bounding box {bbox}")
-
-            # Tạo mặt nạ cho mỗi ROI sử dụng mask_generator
-            roi_masks = self.mask_generator.generate(roi)
-
-            # Thêm thông tin bounding box cho mỗi mặt nạ
-            for mask in roi_masks:
-                mask['bbox'] = bbox  # Gán bbox cho mask
-                mask['roi_id'] = i   # Gán ID của ROI để dễ phân biệt
+        for prop in proposals:
+            mask = self._process_proposal(image, prop)
+            if mask is not None:
                 all_masks.append(mask)
 
-        print(
-            f"[SegmentModel] Generated {len(all_masks)} masks across all ROIs")
-        return all_masks
+        # Kết hợp với các masks từ SAM tự động
+        auto_masks = self.mask_generator.generate(image)
+        all_masks.extend(auto_masks)
+
+        # Lọc bỏ các masks trùng lặp
+        filtered_masks = self._filter_duplicate_masks(all_masks)
+
+        print(f"[SegmentModel] Final number of masks: {len(filtered_masks)}")
+        return filtered_masks
+
+    def _filter_duplicate_masks(self, masks: List[Dict[str, Any]], iou_threshold: float = 0.5) -> List[Dict[str, Any]]:
+        """
+        Lọc bỏ các masks trùng lặp dựa trên IoU
+        """
+        if not masks:
+            return []
+
+        def calculate_iou(mask1, mask2):
+            intersection = np.logical_and(mask1, mask2).sum()
+            union = np.logical_or(mask1, mask2).sum()
+            return intersection / union if union > 0 else 0
+
+        filtered = []
+        used = set()
+
+        # Sắp xếp masks theo predicted_iou
+        sorted_masks = sorted(enumerate(masks),
+                              key=lambda x: x[1]['predicted_iou'],
+                              reverse=True)
+
+        for i, mask in sorted_masks:
+            if i in used:
+                continue
+
+            filtered.append(mask)
+            used.add(i)
+
+            # Kiểm tra các masks còn lại
+            for j, other_mask in sorted_masks:
+                if j not in used:
+                    iou = calculate_iou(mask['segmentation'],
+                                        other_mask['segmentation'])
+                    if iou > iou_threshold:
+                        used.add(j)
+
+        return filtered
