@@ -214,7 +214,7 @@ def save_dataframe(df: pd.DataFrame, path:str) -> None:
     
 def load_config(config_path: str)  -> Config:
     
-    config_dict = load_json(config_path)
+    config_dict = load_json(config_path)    
 
     config = Config(
         models= {k: ModelConfig(**v) for k, v in config_dict['models'].items()},
