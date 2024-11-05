@@ -14,6 +14,9 @@ from GroundingDINO.groundingdino.util.box_ops import box_cxcywh_to_xyxy
 from GroundingDINO.groundingdino.models import build_model
 from typing import List, Dict, Any
 import cv2
+from skimage.segmentation import felzenszwalb, slic
+from skimage.measure import regionprops
+
 import numpy as np
 import torch
 from PIL import Image
